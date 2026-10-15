@@ -1,0 +1,16 @@
+# Arquivos gerados pela compilação
+/bin/*
+
+# Mantém a pasta bin no repositório
+!/bin/.gitkeep
+
+# Binários gerados fora da pasta bin
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dll
+*.exe
+*.out
+*.dylib
