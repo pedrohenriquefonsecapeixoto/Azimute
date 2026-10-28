@@ -1,30 +1,49 @@
-build:
-	g++ -Isrc -Iinclude src/*.cpp -o bin/app.exe
+CXX ?= g++
+CPPFLAGS += -Iinclude -Isrc/moduloConcre
+CXXFLAGS ?= -std=c++17 -Wall -Wextra -pedantic
+
+ifeq ($(OS),Windows_NT)
+SHELL := cmd.exe
+EXE = .exe
+else
+EXE =
+endif
+
+MODULO = $(wildcard src/moduloConcre/*.cpp)
+APP = bin/azimute$(EXE)
+UNITARIO = bin/teste_unitario$(EXE)
+FUNCIONAL = bin/teste_funcional$(EXE)
+
+build: | bin
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(wildcard src/*.cpp) $(MODULO) -o $(APP)
 
 run: build
-	.\bin\app.exe
+	./$(APP)
 
-build_unit:
-	g++ -Isrc -Iinclude test/unit/*.cpp src/bib.cpp -o bin/unit_testes.exe
+build_unit: | bin
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(wildcard test/unit/*.cpp) $(MODULO) -o $(UNITARIO)
 
 run_unit: build_unit
-	.\bin\unit_testes.exe
+	./$(UNITARIO)
 
-build_func:
-	g++ -Isrc -Iinclude test/*.cpp src/bib.cpp -o bin/testeRegressivo.exe
+build_func: | bin
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(wildcard test/funcional/*.cpp) $(MODULO) -o $(FUNCIONAL)
 
 run_func: build_func
-	.\bin\testeRegressivo.exe
+	./$(FUNCIONAL)
 
-build_dll:
-	g++ -Isrc -Iinclude -shared src/bib.cpp -Wl,--export-all-symbols -Wl,--out-implib,bin/libmodulo.dll.a -o bin/modulo.dll
+all: build build_unit build_func
 
-build_dll_app: build_dll
-	g++ -Isrc -Iinclude src/main.cpp -Lbin -lmodulo -o bin/app.exe
+test: run_unit run_func
+
+bin:
+	mkdir bin
 
 clean:
-	-del /Q .\bin\*.exe
-	-del /Q .\bin\*.dll
-	-del /Q .\bin\*.o
-	-del /Q .\bin\*.a
-	-del /Q .\bin\*.so
+ifeq ($(OS),Windows_NT)
+	powershell -NoProfile -NonInteractive -Command "foreach ($$arquivo in @('$(APP)', '$(UNITARIO)', '$(FUNCIONAL)')) { if (Test-Path -LiteralPath $$arquivo) { Remove-Item -LiteralPath $$arquivo -Force -ErrorAction Stop } }"
+else
+	$(RM) $(APP) $(UNITARIO) $(FUNCIONAL)
+endif
+
+.PHONY: all build run build_unit run_unit build_func run_func test clean
