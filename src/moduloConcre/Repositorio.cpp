@@ -9,6 +9,7 @@ Repositorio::~Repositorio() {}
 
 void Repositorio::clear() {
     usuarios.clear();
+    atividades.clear();
     proximoId_ = 100;
 }
 
