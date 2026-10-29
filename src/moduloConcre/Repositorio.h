@@ -2,6 +2,7 @@
 #define REPOSITORIO_H
 #include <vector>
 #include "Usuario.h"
+#include "Entidades.h"
 using namespace std;
 
 class Repositorio {
@@ -12,6 +13,7 @@ public:
     int newId(); 
     const Usuario* findUser(int id) const;
     vector<Usuario> usuarios;
+    vector<Atividade> atividades;
 private:
     Repositorio(); // Construtor privado e copia proibida: so pode existir um repositorio.
     Repositorio(const Repositorio&);
