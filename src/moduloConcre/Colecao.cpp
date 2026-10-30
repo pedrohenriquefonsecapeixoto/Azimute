@@ -78,6 +78,9 @@ const T& Colecao<T>::at(int indice) const {
 // Especializacao usada pelo controle de sessoes desta feature.
 template class Colecao<const Sessao*>;
 template class Iterador<const Sessao*>;
-
+template class Colecao<Usuario>;
+template class Iterador<Usuario>;
+template class Colecao<Participacao>;
+template class Iterador<Participacao>;
 template class Colecao<Atividade>;
 template class Iterador<Atividade>;

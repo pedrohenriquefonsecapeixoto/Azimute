@@ -30,5 +30,21 @@ private:
     vector<int> integrantes_;
 };
 
+class Participacao {
+public:
+    explicit Participacao(int idIntegrante = 0, const string& situacao = "");
+    Participacao(const Participacao& outro);
+    Participacao& operator=(const Participacao& outro);
+    ~Participacao();
+    int memberId() const;
+    string status() const; // Presente, Ausente, Atraso
+    int activityId() const;
+    time_t recordedAt() const;
+    void attach(int idAtividade, time_t quando);
+private:
+    int idAtividade_, idIntegrante_;
+    string situacao_;
+    time_t registradoEm_;
+};
 
 #endif

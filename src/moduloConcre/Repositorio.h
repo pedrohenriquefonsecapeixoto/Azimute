@@ -12,8 +12,10 @@ public:
     void clear();
     int newId(); 
     const Usuario* findUser(int id) const;
+    const Atividade* findActivity(int id) const;
     vector<Usuario> usuarios;
     vector<Atividade> atividades;
+    vector<Participacao> participacoes;
 private:
     Repositorio(); // Construtor privado e copia proibida: so pode existir um repositorio.
     Repositorio(const Repositorio&);

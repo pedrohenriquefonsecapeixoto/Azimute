@@ -4,8 +4,10 @@
 #include "../../src/moduloConcre/ServicoUsuarios.h"
 #include "../../src/moduloConcre/ServicoAtividades.h"
 #include "../../src/moduloConcre/Repositorio.h"
+#include "../../src/moduloConcre/ServicoPresenca.h"
 #include <string>
 #include <vector>
+#include <ctime>
 #include "../../include/Colecao.h"
 
 using namespace std;
@@ -387,6 +389,318 @@ void testQueryResultadoIndependente() {
     verify(idsIguais(lista, {10}) && lista.at(0).details().title() == "Atividade 10",
         "resultado e copia independente do repositorio");
 }
+
+
+// ---------- Registrar presença, ausência ou atraso ----------
+static void testParticipacao() {
+    Participacao p(7, "Presente");
+    verify(p.memberId() == 7 && p.status() == "Presente" && p.activityId() == 0 && p.recordedAt() == 0,
+        "Participacao nasce sem atividade e sem horario de registro");
+    p.attach(12, 1000);
+    verify(p.activityId() == 12 && p.recordedAt() == 1000 && p.memberId() == 7 && p.status() == "Presente",
+        "attach grava atividade e horario sem mexer no resto");
+    Participacao copia(p);
+    p.attach(13, 2000);
+    verify(copia.activityId() == 12 && copia.recordedAt() == 1000, "copia de Participacao e independente");
+    Participacao atribuida;
+    atribuida = p;
+    verify(atribuida.memberId() == 7 && atribuida.activityId() == 13 && atribuida.recordedAt() == 2000
+        && atribuida.status() == "Presente", "atribuicao de Participacao copia todos os campos");
+}
+
+static void testListMembers() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    Usuario chefeOutro(4, DadosUsuario("Chefe 3", Data(1980, 1, 1), "UEL", "Chefe Escotista", 3));
+    Usuario jovem(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(chefeOutro);
+    r.usuarios.push_back(jovem);
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(9, DadosUsuario("Caio", Data(2012, 7, 1), "UEL", "Jovem", 3)));
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    encerrada.enroll(8);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe), sessaoOutro(chefeOutro), sessaoJovem(jovem);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    int idOutro = presenca.add(sessaoOutro);
+    int idJovem = presenca.add(sessaoJovem);
+    Colecao<Usuario> lista = presenca.listMembers(12, idChefe);
+    verify(lista.size() == 2 && lista.at(0).id() == 7 && lista.at(1).id() == 8,
+        "listMembers devolve os Jovens inscritos na atividade da secao do Chefe");
+    r.atividades[0].enroll(9); // Jovem de outra secao
+    r.atividades[0].enroll(2); // Chefe inscrito
+    verify(presenca.listMembers(12, idChefe).size() == 2,
+        "listMembers ignora inscritos que nao sao Jovens da secao da atividade");
+    verify(presenca.listMembers(12, idOutro).size() == 0, "listMembers vazio para Chefe de outra secao");
+    verify(presenca.listMembers(12, idJovem).size() == 0, "listMembers vazio para sessao de Jovem");
+    verify(presenca.listMembers(999, idChefe).size() == 0, "listMembers vazio para atividade inexistente");
+    verify(presenca.listMembers(12, 999).size() == 0, "listMembers vazio para sessao inexistente");
+}
+
+static void testRecordIndividual() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    encerrada.enroll(8);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    bool ok = presenca.record(12, Participacao(7, "Presente"), idChefe);
+    const vector<Participacao>& v = r.participacoes;
+    verify(ok && v.size() == 1 && v[0].memberId() == 7 && v[0].activityId() == 12
+        && v[0].status() == "Presente" && v[0].recordedAt() > 0, "record individual grava com atividade e horario");
+    verify(presenca.record(12, Participacao(8, "Atraso"), idChefe) && v.size() == 2,
+        "record individual aceita Atraso para outro integrante");
+}
+
+static void testRecordLista() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    encerrada.enroll(8);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    Colecao<Participacao> lista;
+    lista.add(Participacao(7, "Presente"));
+    lista.add(Participacao(8, "Atraso"));
+    verify(presenca.record(12, lista, idChefe) && r.participacoes.size() == 2
+        && r.participacoes[0].status() == "Presente" && r.participacoes[1].status() == "Atraso"
+        && r.participacoes[0].activityId() == 12 && r.participacoes[1].activityId() == 12,
+        "record em lista grava todas as participacoes na atividade");
+}
+
+static void testRecordAtividadeNaoEncerrada() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    Atividade futura(13, DadosAtividade("Reuniao", Data(2099, 1, 1), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    futura.enroll(7);
+    r.atividades.push_back(futura);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    verify(!presenca.record(13, Participacao(7, "Presente"), idChefe) && r.participacoes.empty(),
+        "record recusa atividade que ainda nao terminou (inicio + 120 min)");
+}
+
+static void testRecordCancelada() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    Atividade cancelada(14, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Cancelada");
+    cancelada.enroll(7);
+    r.atividades.push_back(cancelada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    verify(!presenca.record(14, Participacao(7, "Presente"), idChefe) && r.participacoes.empty(),
+        "record recusa atividade cancelada");
+}
+
+static void testRecordSituacaoInvalida() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    const string invalidas[] = {"", "presente", "Faltou", "Justificado"};
+    for (const string& s : invalidas)
+        verify(!presenca.record(12, Participacao(7, s), idChefe) && r.participacoes.empty(),
+            "record recusa situacao invalida \"" + s + "\"");
+}
+
+static void testRecordNaoInscrito() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(9, DadosUsuario("Caio", Data(2012, 7, 1), "UEL", "Jovem", 3)));
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    verify(!presenca.record(12, Participacao(9, "Presente"), idChefe) && r.participacoes.empty(),
+        "record recusa Jovem nao inscrito na atividade");
+    verify(!presenca.record(12, Participacao(2, "Presente"), idChefe) && r.participacoes.empty(),
+        "record recusa integrante que nao e Jovem");
+    verify(!presenca.record(12, Participacao(999, "Presente"), idChefe) && r.participacoes.empty(),
+        "record recusa integrante inexistente");
+}
+
+static void testRecordDuplicidade() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    encerrada.enroll(8);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    verify(presenca.record(12, Participacao(8, "Atraso"), idChefe), "prepara: 8 registrado como Atraso");
+    verify(!presenca.record(12, Participacao(8, "Ausente"), idChefe) && r.participacoes.size() == 1
+        && r.participacoes[0].status() == "Atraso",
+        "record recusa integrante ja registrado e mantem a situacao anterior");
+    Colecao<Participacao> repetida;
+    repetida.add(Participacao(7, "Presente"));
+    repetida.add(Participacao(7, "Ausente"));
+    verify(!presenca.record(12, repetida, idChefe) && r.participacoes.size() == 1,
+        "record recusa o mesmo integrante duas vezes no mesmo lote");
+}
+
+static void testRecordTudoOuNada() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(9, DadosUsuario("Caio", Data(2012, 7, 1), "UEL", "Jovem", 3)));
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    encerrada.enroll(8);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    Colecao<Participacao> lote;
+    lote.add(Participacao(7, "Presente"));
+    lote.add(Participacao(8, "Faltou"));
+    verify(!presenca.record(12, lote, idChefe) && r.participacoes.empty(),
+        "lote com situacao invalida no fim nao grava nenhum item");
+    Colecao<Participacao> lote2;
+    lote2.add(Participacao(7, "Presente"));
+    lote2.add(Participacao(9, "Presente"));
+    verify(!presenca.record(12, lote2, idChefe) && r.participacoes.empty(),
+        "lote com nao inscrito no fim nao grava nenhum item");
+    verify(!presenca.record(12, Colecao<Participacao>(), idChefe) && r.participacoes.empty(),
+        "lote vazio e recusado");
+}
+
+static void testRecordPermissoes() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    Usuario chefeOutro(4, DadosUsuario("Chefe 3", Data(1980, 1, 1), "UEL", "Chefe Escotista", 3));
+    Usuario jovem(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(chefeOutro);
+    r.usuarios.push_back(jovem);
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe), sessaoOutro(chefeOutro), sessaoJovem(jovem);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    int idOutro = presenca.add(sessaoOutro);
+    int idJovem = presenca.add(sessaoJovem);
+    verify(!presenca.record(12, Participacao(7, "Presente"), idOutro) && r.participacoes.empty(),
+        "record recusa Chefe de outra secao");
+    verify(!presenca.record(12, Participacao(7, "Presente"), idJovem) && r.participacoes.empty(),
+        "record recusa sessao de Jovem");
+    verify(!presenca.record(12, Participacao(7, "Presente"), 999) && r.participacoes.empty(),
+        "record recusa sessao inexistente");
+    verify(!presenca.record(999, Participacao(7, "Presente"), idChefe) && r.participacoes.empty(),
+        "record recusa atividade inexistente");
+    presenca.remove(idChefe);
+    verify(!presenca.record(12, Participacao(7, "Presente"), idChefe) && r.participacoes.empty(),
+        "record recusa sessao removida");
+}
+
+static void testRecordingTime() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    Usuario chefeOutro(4, DadosUsuario("Chefe 3", Data(1980, 1, 1), "UEL", "Chefe Escotista", 3));
+    Usuario jovem(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(chefeOutro);
+    r.usuarios.push_back(jovem);
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe), sessaoOutro(chefeOutro), sessaoJovem(jovem);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    int idOutro = presenca.add(sessaoOutro);
+    int idJovem = presenca.add(sessaoJovem);
+    int minutos = -5;
+    verify(!presenca.recordingTime(12, minutos, idChefe) && minutos == -5,
+        "recordingTime retorna false sem registro e nao altera a saida");
+    presenca.record(12, Participacao(7, "Presente"), idChefe);
+    minutos = -5;
+    verify(presenca.recordingTime(12, minutos, idChefe) && minutos > 0,
+        "recordingTime retorna true com minutos desde o fim da atividade");
+    minutos = -5;
+    verify(!presenca.recordingTime(12, minutos, idOutro) && minutos == -5,
+        "recordingTime recusa Chefe de outra secao");
+    verify(!presenca.recordingTime(12, minutos, idJovem), "recordingTime recusa Jovem");
+    verify(!presenca.recordingTime(999, minutos, idChefe), "recordingTime recusa atividade inexistente");
+}
+
+static void testRecordingTimeUsaPrimeiroRegistro() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    DadosAtividade dados("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro");
+    Atividade encerrada(12, dados, 2, "Confirmada");
+    encerrada.enroll(7);
+    encerrada.enroll(8);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    time_t fim = 0;
+    bool temFim = dados.endTime(120, fim);
+    Participacao primeira(7, "Presente");
+    Participacao segunda(8, "Presente");
+    primeira.attach(12, fim + 30 * 60);
+    segunda.attach(12, fim + 90 * 60);
+    r.participacoes.push_back(segunda); // fora de ordem de proposito
+    r.participacoes.push_back(primeira);
+    int minutos = -1;
+    verify(temFim && presenca.recordingTime(12, minutos, idChefe) && minutos == 30,
+        "recordingTime mede ate o primeiro registro (30 min)");
+}
+
+
 int runUnitTests() {
     falhas = 0;
     cout << "\n=== UNITARIOS: Cadastrar usuario ===\n";
@@ -411,6 +725,20 @@ int runUnitTests() {
     testQuerySemCorrespondencia();
     testQueryCombinaFiltros();
     testQueryResultadoIndependente();
+    cout << "\n=== UNITARIOS: Registrar presenca,ausencia ou atraso ===\n";
+    testParticipacao();
+    testListMembers();
+    testRecordIndividual();
+    testRecordLista();
+    testRecordAtividadeNaoEncerrada();
+    testRecordCancelada();
+    testRecordSituacaoInvalida();
+    testRecordNaoInscrito();
+    testRecordDuplicidade();
+    testRecordTudoOuNada();
+    testRecordPermissoes();
+    testRecordingTime();
+    testRecordingTimeUsaPrimeiroRegistro();
     Repositorio::instance().clear();
     return falhas;
 }
