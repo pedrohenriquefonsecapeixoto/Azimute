@@ -4,8 +4,13 @@
 #include "../../src/moduloConcre/ServicoUsuarios.h"
 #include "../../src/moduloConcre/ServicoAtividades.h"
 #include "../../src/moduloConcre/Repositorio.h"
+#include <string>
+#include "../../include/Colecao.h"
 
 using namespace std;
+
+// ---------- Cadastrar usuários ----------
+
 static int falhas = 0;
 
 static void verify(bool condicao, const string& descricao) {
@@ -170,15 +175,85 @@ static void testAtvRegraDoCliente() {
         "tipo aceito pela regra do cliente e cadastrado");
 }
 
+// ---------- Consultar atividade/evento ----------
+struct CenarioConsulta {
+    Usuario chefe{2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)};
+    Sessao sessaoChefe{chefe};
+    ServicoAtividades atividades;
+    int idChefe = atividades.add(sessaoChefe);
+    CenarioConsulta() { Repositorio::instance().clear(); }
+    ~CenarioConsulta() { Repositorio::instance().clear(); }
+};
+
+// Fonte: Projeto da API Sprint 2 (1)(1), p. 12, Consultar atividade/evento.
+// CT-01: tres atividades em outubro/2026 na secao do Chefe; uma Confirmada.
+void testConsultaCT01FiltrarEVisualizarDetalhes() {
+    CenarioConsulta cenario;
+    DadosAtividade dados("Acampamento de Outubro", Data(2026, 10, 3), "08:00",
+        "Parque Estadual", "Acampamento", "Escoteiro", "Acampamento da secao 2");
+    // Situacoes preexistentes sao preparacao do cenario, nao novas funcionalidades.
+    Atividade confirmada(10, dados, 2, "Confirmada");
+    confirmada.enroll(7);
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.atividades.push_back(confirmada);
+    repositorio.atividades.push_back(Atividade(11, DadosAtividade("Reuniao", Data(2026, 10, 10), "09:00", "Sede", "Reuniao", "Escoteiro"), 2, "Cancelada"));
+    repositorio.atividades.push_back(Atividade(12, DadosAtividade("Trilha", Data(2026, 10, 17), "07:00", "Parque", "Passeio", "Escoteiro"), 2, "Realizada"));
+
+    FiltroAtividade filtro(Data(2026, 10, 1), Data(2026, 10, 31), "Confirmada");
+    Colecao<Atividade> lista = cenario.atividades.query(filtro, cenario.idChefe);
+    verify(lista.size() == 1, "CT-01: apenas a atividade Confirmada e retornada");
+    Iterador<Atividade> it = lista.iterator();
+    verify(it.hasNext(), "CT-01: o Chefe pode iniciar a leitura pelo iterador");
+    if (it.hasNext()) {
+        const Atividade& a = it.next();
+        verify(a.id() == 10 && a.sectionId() == 2 && a.status() == "Confirmada"
+            && a.details().title() == dados.title() && a.details().date() == dados.date()
+            && a.details().startTime() == dados.startTime() && a.details().place() == dados.place()
+            && a.details().type() == dados.type() && a.details().branch() == dados.branch()
+            && a.details().description() == dados.description()
+            && a.members().size() == 1 && a.members()[0] == 7,
+            "CT-01: iterador entrega a atividade correta com todos os detalhes");
+    }
+    verify(!it.hasNext(), "CT-01: nenhuma atividade Cancelada ou Realizada aparece na lista");
+    verify(repositorio.atividades.size() == 3, "CT-01: consulta nao remove atividades cadastradas");
+}
+
+// CT-02, primeira alternativa: nenhuma atividade no periodo pedido.
+void testConsultaCT02SemAtividadesNoPeriodo() {
+    CenarioConsulta cenario;
+    Repositorio::instance().atividades.push_back(Atividade(10,
+        DadosAtividade("Reuniao", Data(2026, 9, 30), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada"));
+    Colecao<Atividade> lista = cenario.atividades.query(
+        FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31)), cenario.idChefe);
+    verify(lista.size() == 0 && !lista.iterator().hasNext(),
+        "CT-02a: periodo sem atividades retorna colecao vazia, sem erro");
+}
+
+// CT-02, segunda alternativa: so existem atividades de outra secao.
+void testConsultaCT02AtividadesDeOutraSecao() {
+    CenarioConsulta cenario;
+    Repositorio::instance().atividades.push_back(Atividade(10,
+        DadosAtividade("Reuniao da secao 3", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 3, "Confirmada"));
+    Colecao<Atividade> lista = cenario.atividades.query(
+        FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31)), cenario.idChefe);
+    verify(lista.size() == 0 && !lista.iterator().hasNext(),
+        "CT-02b: atividades de outra secao nao sao exibidas ao Chefe");
+}
 int runFunctionalTests() {
     falhas = 0;
+    cout << "\n=== FUNCIONAIS: Cadastrar usuario ===\n";
     testCT01CadastroValido();
     testCT02CadastroDuplicado();
+    cout << "\n=== FUNCIONAIS: Cadastrar atividade/evento ===\n";
     testAtvCT01CadastroValido();
     testAtvCT02SemTitulo();
     testAtvHorarioInvalido();
     testAtvSessaoNaoChefe();
     testAtvRegraDoCliente();
+    cout << "\n=== FUNCIONAIS: Consultar atividade/evento ===\n";
+    testConsultaCT01FiltrarEVisualizarDetalhes();
+    testConsultaCT02SemAtividadesNoPeriodo();
+    testConsultaCT02AtividadesDeOutraSecao();
     Repositorio::instance().clear();
     return falhas;
 }
