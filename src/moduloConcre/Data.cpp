@@ -41,9 +41,6 @@ bool Data::valid() const{
         ++limite;
     return dia_ <= limite; 
 }
-
-
-
 bool Data::operator<=(const Data& outro) const { 
     return tie(ano_, mes_, dia_) <= tie(outro.ano_, outro.mes_, outro.dia_); 
 }
