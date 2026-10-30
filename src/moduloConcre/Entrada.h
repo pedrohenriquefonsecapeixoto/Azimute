@@ -56,4 +56,24 @@ private:
     string horario_, local_, tipo_, ramo_, descricao_;
 };
 
+class FiltroAtividade {
+public:
+    // situacao "" = qualquer; idSecao 0 = sem seçao
+    explicit FiltroAtividade(const Data& inicio = Data(), const Data& fim = Data(),
+                             const string& situacao = "", int idSecao = 0);
+    FiltroAtividade(const FiltroAtividade& outro);
+    FiltroAtividade& operator=(const FiltroAtividade& outro);
+    ~FiltroAtividade();
+
+    Data start() const;
+    Data end() const;
+    string status() const;
+    int sectionId() const;
+
+private:
+    Data inicio_, fim_;
+    string situacao_;
+    int idSecao_;
+};
+
 #endif

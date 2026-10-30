@@ -130,3 +130,39 @@ string DadosAtividade::branch() const {
 string DadosAtividade::description() const { 
     return descricao_; 
 }
+
+FiltroAtividade::FiltroAtividade(const Data& inicio, const Data& fim,
+                         const string& situacao, int idSecao)
+    : inicio_(inicio), fim_(fim), situacao_(situacao), idSecao_(idSecao) {}
+
+FiltroAtividade::FiltroAtividade(const FiltroAtividade& outro)
+    : inicio_(outro.inicio_), fim_(outro.fim_), situacao_(outro.situacao_), idSecao_(outro.idSecao_) {}
+
+FiltroAtividade& FiltroAtividade::operator=(const FiltroAtividade& outro) {
+    if (this != &outro) {
+        inicio_ = outro.inicio_;
+        fim_ = outro.fim_;
+        situacao_ = outro.situacao_;
+        idSecao_ = outro.idSecao_;
+    }
+    return *this;
+}
+
+FiltroAtividade::~FiltroAtividade() {}
+
+Data FiltroAtividade::start() const { 
+    return inicio_; 
+}
+
+Data FiltroAtividade::end() const { 
+    return fim_; 
+}
+
+string FiltroAtividade::status() const { 
+    return situacao_; 
+}
+
+int FiltroAtividade::sectionId() const { 
+    return idSecao_; 
+}
+

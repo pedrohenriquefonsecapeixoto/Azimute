@@ -4,8 +4,14 @@
 #include "../../src/moduloConcre/ServicoUsuarios.h"
 #include "../../src/moduloConcre/ServicoAtividades.h"
 #include "../../src/moduloConcre/Repositorio.h"
+#include <string>
+#include <vector>
+#include "../../include/Colecao.h"
 
 using namespace std;
+
+// ---------- Cadastrar usuários ----------
+
 static int falhas = 0;
 
 static void verify(bool condicao, const string& descricao) {
@@ -264,19 +270,147 @@ static void testAddRegraAtividade() {
         && Repositorio::instance().atividades.size() == 1, "registrar aceita dados que atendem a todas as regras adicionadas");
 }
 
+// ---------- Consultar atividade/evento ----------
+struct ConsultaAtv {
+    Usuario chefe{2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)};
+    Sessao sessaoChefe{chefe};
+    ServicoAtividades atividades;
+    int idChefe = atividades.add(sessaoChefe);
+    ConsultaAtv() { Repositorio::instance().clear(); }
+    ~ConsultaAtv() { Repositorio::instance().clear(); }
+};
+
+void prepararAtividade(int id, const Data& data, const string& situacao = "Confirmada", int idSecao = 2) {
+    DadosAtividade dados("Atividade " + to_string(id), data, "08:30", "Sede", "Reuniao", "Escoteiro", "Descricao");
+    Repositorio::instance().atividades.push_back(Atividade(id, dados, idSecao, situacao));
+}
+
+bool idsIguais(const Colecao<Atividade>& lista, const vector<int>& esperados) {
+    vector<int> ids;
+    for (auto it = lista.iterator(); it.hasNext();) ids.push_back(it.next().id());
+    return lista.size() == static_cast<int>(esperados.size()) && ids == esperados;
+}
+
+void testFiltroAtividade() {
+    FiltroAtividade filtro(Data(2026, 10, 1), Data(2026, 10, 31), "Confirmada", 2);
+    verify(filtro.start() == Data(2026, 10, 1) && filtro.end() == Data(2026, 10, 31)
+        && filtro.status() == "Confirmada" && filtro.sectionId() == 2,
+        "FiltroAtividade guarda periodo, situacao e secao");
+    FiltroAtividade padrao(Data(2026, 10, 1), Data(2026, 10, 31));
+    verify(padrao.status().empty() && padrao.sectionId() == 0,
+        "filtros opcionais nao restringem situacao nem selecionam outra secao");
+}
+
+void testQueryPeriodo() {
+    ConsultaAtv consulta;
+    prepararAtividade(10, Data(2026, 9, 30));
+    prepararAtividade(11, Data(2026, 10, 1));
+    prepararAtividade(12, Data(2026, 10, 15));
+    prepararAtividade(13, Data(2026, 10, 31));
+    prepararAtividade(14, Data(2026, 11, 1));
+    verify(idsIguais(consulta.atividades.query(FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31)), consulta.idChefe), {11, 12, 13}),
+        "query inclui os dois limites do periodo e exclui datas fora dele");
+    verify(idsIguais(consulta.atividades.query(FiltroAtividade(Data(2026, 10, 15), Data(2026, 10, 15)), consulta.idChefe), {12}),
+        "query aceita um periodo de um unico dia");
+}
+
+void testQuerySituacao() {
+    ConsultaAtv consulta;
+    prepararAtividade(10, Data(2026, 10, 3), "Confirmada");
+    prepararAtividade(11, Data(2026, 10, 4), "Cancelada");
+    prepararAtividade(12, Data(2026, 10, 5), "Realizada");
+    const string situacoes[] = {"Confirmada", "Cancelada", "Realizada"};
+    for (int indice = 0; indice < 3; ++indice)
+        verify(idsIguais(consulta.atividades.query(FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31), situacoes[indice]), consulta.idChefe), {10 + indice}),
+            "query filtra situacao " + situacoes[indice]);
+    verify(idsIguais(consulta.atividades.query(FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31)), consulta.idChefe), {10, 11, 12}),
+        "query sem situacao retorna todas as situacoes do periodo");
+}
+
+void testQuerySecao() {
+    ConsultaAtv consulta;
+    prepararAtividade(10, Data(2026, 10, 3), "Confirmada", 2);
+    prepararAtividade(11, Data(2026, 10, 3), "Confirmada", 3);
+    verify(idsIguais(consulta.atividades.query(FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31)), consulta.idChefe), {10}),
+        "query sem secao explicita restringe o resultado a secao do Chefe");
+    verify(idsIguais(consulta.atividades.query(FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31), "", 2), consulta.idChefe), {10}),
+        "query aceita filtro explicito da propria secao");
+    verify(idsIguais(consulta.atividades.query(FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31), "", 3), consulta.idChefe), {}),
+        "query recusa filtro explicito de outra secao");
+}
+
+void testQueryPermissoes() {
+    ConsultaAtv consulta;
+    prepararAtividade(10, Data(2026, 10, 3));
+    Usuario jovem(3, DadosUsuario("Jovem", Data(2012, 1, 1), "UEL", "Jovem", 2));
+    Usuario dirigente(1, DadosUsuario("Dirigente", Data(1980, 1, 1), "UEL", "Dirigente da UEL", 2));
+    Sessao sessaoJovem(jovem), sessaoDirigente(dirigente);
+    int ids[] = {consulta.atividades.add(sessaoJovem), consulta.atividades.add(sessaoDirigente), -1, 999};
+    FiltroAtividade filtro(Data(2026, 10, 1), Data(2026, 10, 31));
+    for (int id : ids)
+        verify(idsIguais(consulta.atividades.query(filtro, id), {}), "query recusa papel ou sessao nao autorizado: " + to_string(id));
+    bool removida = consulta.atividades.remove(consulta.idChefe);
+    verify(removida && idsIguais(consulta.atividades.query(filtro, consulta.idChefe), {}),
+        "query recusa sessao removida");
+}
+
+void testQuerySemCorrespondencia() {
+    ConsultaAtv consulta;
+    FiltroAtividade filtro(Data(2026, 10, 1), Data(2026, 10, 31));
+    verify(idsIguais(consulta.atividades.query(filtro, consulta.idChefe), {}), "query com repositorio vazio devolve colecao vazia");
+    prepararAtividade(10, Data(2026, 11, 1));
+    verify(idsIguais(consulta.atividades.query(filtro, consulta.idChefe), {}), "query sem data correspondente devolve colecao vazia");
+    prepararAtividade(11, Data(2026, 10, 1), "Realizada");
+    verify(idsIguais(consulta.atividades.query(FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31), "Cancelada"), consulta.idChefe), {}),
+        "query sem situacao correspondente devolve colecao vazia");
+}
+
+void testQueryCombinaFiltros() {
+    ConsultaAtv consulta;
+    prepararAtividade(10, Data(2026, 10, 3), "Confirmada", 2);
+    prepararAtividade(11, Data(2026, 11, 3), "Confirmada", 2);
+    prepararAtividade(12, Data(2026, 10, 3), "Realizada", 2);
+    prepararAtividade(13, Data(2026, 10, 3), "Confirmada", 3);
+    Consulta<Atividade, FiltroAtividade>& contrato = consulta.atividades;
+    verify(idsIguais(contrato.query(FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31), "Confirmada", 2), consulta.idChefe), {10}),
+        "query combina periodo, situacao e secao pelo contrato Consulta");
+}
+
+void testQueryResultadoIndependente() {
+    ConsultaAtv consulta;
+    prepararAtividade(10, Data(2026, 10, 3));
+    FiltroAtividade filtro(Data(2026, 10, 1), Data(2026, 10, 31));
+    Colecao<Atividade> lista = consulta.atividades.query(filtro, consulta.idChefe);
+    verify(Repositorio::instance().atividades.size() == 1 && Repositorio::instance().atividades[0].id() == 10,
+        "query preserva a atividade armazenada");
+    Repositorio::instance().clear();
+    verify(idsIguais(lista, {10}) && lista.at(0).details().title() == "Atividade 10",
+        "resultado e copia independente do repositorio");
+}
 int runUnitTests() {
     falhas = 0;
+    cout << "\n=== UNITARIOS: Cadastrar usuario ===\n";
     testRegistrarDadosValidos();
     testRegistrarCamposInvalidos();
     testRegistrarPermissoes();
     testRegistrarDuplicidade();
     testAddRegra();
+    cout << "\n=== UNITARIOS: Cadastrar atividade/evento ===\n";
     testValidStartTime();
     testAtividadeEnroll();
     testRegistrarAtividadeValida();
     testRegistrarAtividadeCamposInvalidos();
     testRegistrarAtividadePermissoes();
     testAddRegraAtividade();
+    cout << "\n=== UNITARIOS: Consultar atividade/evento ===\n";
+    testFiltroAtividade();
+    testQueryPeriodo();
+    testQuerySituacao();
+    testQuerySecao();
+    testQueryPermissoes();
+    testQuerySemCorrespondencia();
+    testQueryCombinaFiltros();
+    testQueryResultadoIndependente();
     Repositorio::instance().clear();
     return falhas;
 }
