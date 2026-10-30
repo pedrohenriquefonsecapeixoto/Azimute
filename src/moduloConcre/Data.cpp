@@ -42,12 +42,7 @@ bool Data::valid() const{
     return dia_ <= limite; 
 }
 
-int Data::key() const { 
-    long long valor = static_cast<long long>(ano_) * 10000 + static_cast<long long>(mes_) * 100 + dia_;
-    if (valor < numeric_limits<int>::min() || valor > numeric_limits<int>::max())
-        throw overflow_error("Data::key fora do intervalo de int");
-    return static_cast<int>(valor); 
-}
+
 
 bool Data::operator<=(const Data& outro) const { 
     return tie(ano_, mes_, dia_) <= tie(outro.ano_, outro.mes_, outro.dia_); 
