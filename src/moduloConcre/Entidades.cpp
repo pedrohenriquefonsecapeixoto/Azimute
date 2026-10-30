@@ -43,3 +43,41 @@ string Atividade::status() const{
     return situacao_; 
 }
 
+Participacao::Participacao(int idIntegrante, const string& situacao)
+    : idAtividade_(0), idIntegrante_(idIntegrante), situacao_(situacao), registradoEm_(0) {}
+
+Participacao::Participacao(const Participacao& outro)
+    : idAtividade_(outro.idAtividade_), idIntegrante_(outro.idIntegrante_),
+      situacao_(outro.situacao_), registradoEm_(outro.registradoEm_){}
+
+Participacao& Participacao::operator=(const Participacao& outro){
+    if (this != &outro) {
+        idAtividade_ = outro.idAtividade_;
+        idIntegrante_ = outro.idIntegrante_;
+        situacao_ = outro.situacao_;
+        registradoEm_ = outro.registradoEm_;
+    }
+    return *this;
+}
+
+Participacao::~Participacao(){}
+
+int Participacao::memberId() const{ 
+    return idIntegrante_; }
+
+string Participacao::status() const { 
+    return situacao_; 
+}
+
+int Participacao::activityId() const { 
+    return idAtividade_; 
+}
+
+time_t Participacao::recordedAt() const { 
+    return registradoEm_; 
+}
+
+void Participacao::attach(int idAtividade, time_t quando) {
+    idAtividade_ = idAtividade;
+    registradoEm_ = quando;
+}
