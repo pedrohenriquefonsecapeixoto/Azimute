@@ -1,7 +1,7 @@
 #ifndef ENTRADA_H
 #define ENTRADA_H
-#include <ctime>
 #include <string>
+#include <ctime>
 #include "Data.h"
 
 using namespace std;
@@ -76,4 +76,23 @@ private:
     int idSecao_;
 };
 
-#endif
+class FiltroHistorico {
+public:
+    // idIntegrante 0 = o proprio usuario (ou a secao inteira, se idSecao != 0)
+    explicit FiltroHistorico(const Data& inicio = Data(), const Data& fim = Data(),
+                             int idIntegrante = 0, int idSecao = 0);
+    FiltroHistorico(const FiltroHistorico& outro);
+    FiltroHistorico& operator=(const FiltroHistorico& outro);
+    ~FiltroHistorico();
+
+    Data start() const;
+    Data end() const;
+    int memberId() const;
+    int sectionId() const;
+
+private:
+    Data inicio_, fim_;
+    int idIntegrante_, idSecao_;
+};
+
+#endif // AZIMUTE_SRC_MODULOCONCRE_ENTRADA_H

@@ -12,7 +12,6 @@ public:
     int month() const;
     int day() const;
     bool valid() const;
-    int key() const;
     bool operator<=(const Data& outro) const;
     bool operator==(const Data& outro) const;
     static Data today();

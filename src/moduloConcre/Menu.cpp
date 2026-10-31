@@ -1,7 +1,5 @@
 #include "Menu.h"
 #include <iostream>
-#include <sstream>
-#include <limits>
 #include <string>
 #include "Usuario.h"
 #include "Entrada.h"
@@ -13,6 +11,7 @@
 
 using namespace std;
 
+// Le uma linha de texto.
 string texto(const char* pergunta) {
     cout << pergunta;
     string valor;
@@ -20,39 +19,22 @@ string texto(const char* pergunta) {
     return valor;
 }
 
-int numero(const char* pergunta, int minimo = numeric_limits<int>::min(),
-           int maximo = numeric_limits<int>::max()) {
-    while (cin) {
-        istringstream entrada(texto(pergunta));
-        if (!cin) break;
-        int valor;
-        char sobra;
-        if (!(entrada >> valor) || (entrada >> sobra)) {
-            cout << "Numero invalido.\n";
-            continue;
-        }
-        if (valor < minimo || valor > maximo) {
-            cout << "Informe um valor entre " << minimo << " e " << maximo << ".\n";
-            continue;
-        }
-        return valor;
-    }
-    return -1;
+// Se o usuario digitar algo invalido, devolve 0
+// e quem chamou decide o que fazer 
+int numero(const char* pergunta) {
+    int valor = 0;
+    cout << pergunta;
+    cin >> valor;
+    cin.clear();
+    cin.ignore(1000, '\n'); // descarta o resto da linha
+    return valor;
 }
 
 Data data() {
-    int ano = numero("Ano: ", 1);
-    if (!cin) return Data();
-    int mes = numero("Mes: ", 1, 12);
-    if (!cin) return Data();
-    while (cin) {
-        int dia = numero("Dia: ", 1, 31);
-        if (!cin) break;
-        Data valor(ano, mes, dia);
-        if (valor.valid()) return valor;
-        cout << "Dia invalido para o mes e ano informados.\n";
-    }
-    return Data();
+    int ano = numero("Ano: ");
+    int mes = numero("Mes: ");
+    int dia = numero("Dia: ");
+    return Data(ano, mes, dia);
 }
 
 DadosUsuario dadosUsuario() {
@@ -63,7 +45,7 @@ DadosUsuario dadosUsuario() {
     cout << "1 Jovem\n2 Chefe Escotista\n3 Dirigente da UEL\n";
     int opcao = numero("Papel: ");
     int secao = numero("ID da secao (0 para dirigente sem secao): ");
-    if (!cin || opcao < 1 || opcao > 3 || secao < 0 || (opcao != 3 && secao == 0))
+    if (opcao < 1 || opcao > 3 || secao < 0 || (opcao != 3 && secao == 0))
         return DadosUsuario();
     const string papeis[] = {"Jovem", "Chefe Escotista", "Dirigente da UEL"};
     return DadosUsuario(nome, nascimento, vinculo, papeis[opcao - 1], secao);
@@ -72,22 +54,15 @@ DadosUsuario dadosUsuario() {
 void cadastrarAtividade(ServicoAtividades& atividades, int idChefeAtividades) {
     string titulo = texto("Titulo: ");
     Data dia = data();
-    if (!cin) return;
-    string horario;
-    while (cin) {
-        horario = texto("Horario HH:MM: ");
-        if (!cin) return;
-        if (DadosAtividade("", dia, horario, "", "", "").validStartTime()) break;
-        cout << "Horario invalido. Informe HH:MM, de 00:00 a 23:59.\n";
-    }
+    string horario = texto("Horario HH:MM: ");
     string local = texto("Local: ");
     string tipo = texto("Tipo: ");
     string ramo = texto("Ramo: ");
-    if (!cin) return;
     Atividade reuniao;
     if (atividades.registrar(DadosAtividade(titulo, dia, horario, local, tipo, ramo), reuniao, idChefeAtividades))
         cout << "Atividade cadastrada. ID: " << reuniao.id() << '\n';
-    else cout << "Cadastro recusado. Confira os dados e a permissao do usuario.\n";
+    else
+        cout << "Cadastro recusado. Confira os dados e a permissao do usuario.\n";
 }
 
 void listarAtividades(ServicoAtividades& atividades, int idChefeAtividades) {
@@ -103,9 +78,7 @@ void listarAtividades(ServicoAtividades& atividades, int idChefeAtividades) {
 }
 
 void registrarPresenca(ServicoPresenca& presenca, int idChefePresenca) {
-    int idAtividade = numero("ID da atividade: ", 1);
-    if (!cin) 
-        return;
+    int idAtividade = numero("ID da atividade: ");
     Colecao<Usuario> integrantes = presenca.listMembers(idAtividade, idChefePresenca);
     if (integrantes.size() == 0) {
         cout << "Atividade nao encontrada, de outra secao ou sem integrantes inscritos.\n";
@@ -116,9 +89,8 @@ void registrarPresenca(ServicoPresenca& presenca, int idChefePresenca) {
     for (auto i = integrantes.iterator(); i.hasNext();) {
         const Usuario& jovem = i.next();
         cout << jovem.id() << " - " << jovem.details().name() << '\n';
-        int opcao = numero("1 Presente, 2 Ausente, 3 Atraso, 0 sem marcacao: ", 0, 3);
-        if (!cin) return;
-        if (opcao != 0)
+        int opcao = numero("1 Presente, 2 Ausente, 3 Atraso, 0 sem marcacao: ");
+        if (opcao >= 1 && opcao <= 3)
             marcacoes.add(Participacao(jovem.id(), situacoes[opcao - 1]));
     }
     if (marcacoes.size() == 0) {
@@ -136,6 +108,30 @@ void registrarPresenca(ServicoPresenca& presenca, int idChefePresenca) {
         cout << "Tempo entre o fim da atividade e o registro: " << minutos << " min\n";
 }
 
+void consultarHistorico(ServicoPresenca& presenca, int idDirigentePresenca) {
+    int membro = numero("ID do jovem: ");
+    cout << "Inicio do periodo\n";
+    Data inicio = data();
+    cout << "Fim do periodo\n";
+    Data fim = data();
+    if (!inicio.valid() || !fim.valid()) {
+        cout << "Data invalida.\n";
+        return;
+    }
+    FiltroHistorico filtro(inicio, fim, membro);
+    Colecao<Participacao> historico = presenca.query(filtro, idDirigentePresenca);
+    double percentual;
+    if (!presenca.attendancePercentage(filtro, percentual, idDirigentePresenca)) {
+        cout << "Sem registros no periodo ou consulta recusada.\n";
+        return;
+    }
+    for (auto i = historico.iterator(); i.hasNext();) {
+        const Participacao& registro = i.next();
+        cout << "Atividade " << registro.activityId() << ": " << registro.status() << '\n';
+    }
+    cout << "Frequencia: " << percentual << "%\n";
+}
+
 void menu() {
     Usuario dirigente(1, DadosUsuario("Dirigente da UEL", Data(1980, 1, 1), "UEL", "Dirigente da UEL", 0));
     Sessao sessaoDirigente(dirigente);
@@ -145,35 +141,39 @@ void menu() {
     int idChefeAtividades = atividades.add(sessaoChefe);
     ServicoPresenca presenca;
     int idChefePresenca = presenca.add(sessaoChefe);
+    int idDirigentePresenca = presenca.add(sessaoDirigente);
     ServicoUsuarios usuarios;
     int idDirigenteUsuarios = usuarios.add(sessaoDirigente);
     cout << "Azimute - cadastrar usuario.\n";
-    while (cin) {
-        cout << "\n1 Cadastrar usuario\n2 Consultar atividades\n3 Cadastrar atividade\n4 Registrar presenca\n0 Sair\n";
+    while (true) {
+        cout << "\n1 Cadastrar usuario\n2 Consultar atividades\n3 Cadastrar atividade\n4 Registrar presenca\n5 Historico e frequencia\n0 Sair\n";
         int opcao = numero("Opcao: ");
-        if (!cin || opcao == 0) 
-            return;
-        if(opcao == 4){
-            registrarPresenca(presenca, idChefePresenca);
-            continue;
-        }    
-        if (opcao == 3) {
-            cadastrarAtividade(atividades, idChefeAtividades);
-            continue;
+        switch (opcao) {
+            case 0:
+                return;
+            case 1: {
+                DadosUsuario dados = dadosUsuario();
+                Usuario ana;
+                if (usuarios.registrar(dados, ana, idDirigenteUsuarios))
+                    cout << "Usuario cadastrado. ID: " << ana.id() << '\n';
+                else
+                    cout << "Cadastro recusado: dados invalidos.\n";
+                break;
+            }
+            case 2:
+                listarAtividades(atividades, idChefeAtividades);
+                break;
+            case 3:
+                cadastrarAtividade(atividades, idChefeAtividades);
+                break;
+            case 4:
+                registrarPresenca(presenca, idChefePresenca);
+                break;
+            case 5:
+                consultarHistorico(presenca, idDirigentePresenca);
+                break;
+            default:
+                cout << "Opcao invalida.\n";
         }
-        if (opcao == 2) {
-            listarAtividades(atividades, idChefeAtividades);
-            continue;
-        }
-        if (opcao != 1) { cout << "Opcao invalida.\n"; 
-            continue; }
-        DadosUsuario dados = dadosUsuario();
-        Usuario ana;
-        if (!cin)   
-            return;
-        if (usuarios.registrar(dados, ana, idDirigenteUsuarios))
-            cout << "Usuario cadastrado. ID: " << ana.id() << '\n';
-        else 
-            cout << "Cadastro recusado: dados invalidos.\n";
     }
 }

@@ -90,6 +90,25 @@ bool ServicoPresenca::recordingTime(int idAtividade, int& minutos, int idSessao)
     return true;
 }
 
+Colecao<Participacao> ServicoPresenca::query(const FiltroHistorico& filtro, int idSessao) {
+    Colecao<Participacao> resultado;
+    collect(filtro, resultado, idSessao);
+    return resultado;
+}
+
+bool ServicoPresenca::attendancePercentage(const FiltroHistorico& filtro, double& percentual, int idSessao) {
+    Colecao<Participacao> registros;
+    if (!collect(filtro, registros, idSessao) || registros.size() == 0) 
+        return false;
+    int comparecimentos = 0;
+    for (Iterador<Participacao> iterador = registros.iterator(); iterador.hasNext(); ) {
+        string situacao = iterador.next().status();
+        if (situacao == "Presente" || situacao == "Atraso") ++comparecimentos;
+    }
+    percentual = 100.0 * comparecimentos / registros.size();
+    return true;
+}
+
 bool ServicoPresenca::canManage(const Atividade& atividade, int idSessao) const {
     const Sessao* sessao = session(idSessao);
     if (!sessao) 
@@ -113,4 +132,50 @@ bool ServicoPresenca::isRecorded(int idAtividade, int idIntegrante) {
             return true;
     }
     return false;
+}
+
+bool ServicoPresenca::collect(const FiltroHistorico& filtro, Colecao<Participacao>& saida, int idSessao) const {
+    const Sessao* sessao = session(idSessao);
+    if (!sessao) 
+        return false;
+    const Usuario& eu = sessao->user();
+    const Repositorio& repositorio = Repositorio::instance();
+    string papel = eu.role();
+    if (papel != "Jovem" && papel != "Chefe Escotista" && papel != "Dirigente da UEL") 
+        return false;
+    bool porSecao = (filtro.memberId() == 0 && filtro.sectionId() != 0);
+    int alvo = (filtro.memberId() == 0) ? eu.id() : filtro.memberId();
+    if (porSecao) {
+        if (papel == "Jovem") 
+            return false;
+        if (papel == "Chefe Escotista" && filtro.sectionId() != eu.sectionId()) 
+            return false;
+    } else if (papel == "Jovem") {            //por alvo
+        if (alvo != eu.id()) 
+            return false;
+    } else {
+        const Usuario* aluno = repositorio.findUser(alvo);
+        if (!aluno || aluno->role() != "Jovem") 
+            return false;   //so pode consultar Jovem
+        if (papel == "Chefe Escotista" && aluno->sectionId() != eu.sectionId()) 
+            return false; //aluno de outra turma
+    }
+    for (size_t indice = 0; indice < repositorio.participacoes.size(); ++indice) {
+        const Participacao& participacao = repositorio.participacoes[indice];
+        const Atividade* atividade = repositorio.findActivity(participacao.activityId());
+        if (!atividade || atividade->status() == "Cancelada") 
+            continue;
+        Data data = atividade->details().date();
+        if (!(filtro.start() <= data && data <= filtro.end())) 
+            continue;
+        if (porSecao) {
+            const Usuario* cadastro = repositorio.findUser(participacao.memberId());
+            if (!cadastro || cadastro->sectionId() != filtro.sectionId()) 
+                continue;
+        } else if (participacao.memberId() != alvo) {
+            continue;
+        }
+        saida.add(participacao);
+    }
+    return true;
 }
