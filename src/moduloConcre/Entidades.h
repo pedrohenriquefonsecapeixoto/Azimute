@@ -47,4 +47,32 @@ private:
     time_t registradoEm_;
 };
 
+class Justificativa {
+public:
+    explicit Justificativa(int id = 0, int idIntegrante = 0, int idAtividade = 0, int idSecao = 0,
+                           const string& estado = "Pendente");
+    Justificativa(const Justificativa& outro);
+    Justificativa& operator=(const Justificativa& outro);
+    ~Justificativa();
+    int id() const;
+    int sectionId() const;
+    string status() const; // Pendente, Aceita, Recusada
+    void setStatus(const string& estado);
+private:
+    int id_, idIntegrante_, idAtividade_, idSecao_;
+    string estado_;
+};
+
+class Alerta {
+public:
+    explicit Alerta(int idDestinatario = 0, int idJustificativa = 0);
+    Alerta(const Alerta& outro);
+    Alerta& operator=(const Alerta& outro);
+    ~Alerta();
+    int recipientId() const;
+    int justificationId() const;
+private:
+    int idDest_, idJust_;
+};
+
 #endif

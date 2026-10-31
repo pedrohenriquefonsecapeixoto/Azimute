@@ -109,6 +109,45 @@ bool ServicoPresenca::attendancePercentage(const FiltroHistorico& filtro, double
     return true;
 }
 
+bool ServicoPresenca::generatePendingAlerts(int idSessao) {
+    const Sessao* sessao = session(idSessao);
+    if (!sessao) 
+        return false;
+    if (sessao->user().role() != "Sistema") 
+        return false;
+    Repositorio& repositorio = Repositorio::instance();
+    for (size_t indiceJustificativa = 0; indiceJustificativa < repositorio.justificativas.size(); ++indiceJustificativa) {
+        const Justificativa& justificativa = repositorio.justificativas[indiceJustificativa];
+        if (justificativa.status() != "Pendente") 
+            continue;
+        for (size_t indiceUsuario = 0; indiceUsuario < repositorio.usuarios.size(); ++indiceUsuario) {
+            const Usuario& chefe = repositorio.usuarios[indiceUsuario];
+            if (chefe.role() != "Chefe Escotista" || chefe.sectionId() != justificativa.sectionId()) 
+                continue; 
+            if (!alertExists(chefe.id(), justificativa.id()))
+                repositorio.alertas.push_back(Alerta(chefe.id(), justificativa.id()));
+        }
+    }
+    return true;
+}
+
+Colecao<Alerta> ServicoPresenca::query(const FiltroAlerta&, int idSessao) {
+    Colecao<Alerta> resultado;
+    const Sessao* sessao = session(idSessao);
+    if (!sessao) 
+        return resultado;
+    const Repositorio& repositorio = Repositorio::instance();
+    for (size_t indice = 0; indice < repositorio.alertas.size(); ++indice) {
+        const Alerta& alerta = repositorio.alertas[indice];
+        if (alerta.recipientId() != sessao->user().id()) 
+            continue;
+        const Justificativa* justificativa = repositorio.findJustification(alerta.justificationId());
+        if (justificativa && justificativa->status() == "Pendente") 
+            resultado.add(alerta);
+    }
+    return resultado;
+}
+
 bool ServicoPresenca::canManage(const Atividade& atividade, int idSessao) const {
     const Sessao* sessao = session(idSessao);
     if (!sessao) 
@@ -131,6 +170,15 @@ bool ServicoPresenca::isRecorded(int idAtividade, int idIntegrante) {
         if (participacao.activityId() == idAtividade && participacao.memberId() == idIntegrante) 
             return true;
     }
+    return false;
+}
+
+bool ServicoPresenca::alertExists(int idDestinatario, int idJustificativa) {
+    const Repositorio& repositorio = Repositorio::instance();
+    for (size_t indice = 0; indice < repositorio.alertas.size(); ++indice)
+        if (repositorio.alertas[indice].recipientId() == idDestinatario &&
+            repositorio.alertas[indice].justificationId() == idJustificativa) 
+                return true;
     return false;
 }
 

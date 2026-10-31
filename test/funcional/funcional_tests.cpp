@@ -606,6 +606,84 @@ static void testHistSessaoInexistente() {
         "sessao removida: vazio e false");
 }
 
+// ---------- Alertar justificativa pendente ----------
+
+struct CenarioAlertas {
+    Usuario sistema, carlos, outroChefe, jovem;
+    Sessao sessaoSistema, sessaoCarlos, sessaoOutroChefe, sessaoJovem;
+    ServicoPresenca presenca;
+    int idSistema, idCarlos, idOutroChefe, idJovem;
+
+    CenarioAlertas()
+        : sistema(0, DadosUsuario("Sistema", Data(1980, 1, 1), "UEL", "Sistema", 0)),
+          carlos(2, DadosUsuario("Carlos", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)),
+          outroChefe(4, DadosUsuario("Outro Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 3)),
+          jovem(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)),
+          sessaoSistema(sistema), sessaoCarlos(carlos), sessaoOutroChefe(outroChefe), sessaoJovem(jovem) {
+        Repositorio& repositorio = Repositorio::instance();
+        repositorio.clear();
+        repositorio.usuarios.push_back(carlos);
+        repositorio.usuarios.push_back(outroChefe);
+        repositorio.usuarios.push_back(jovem);
+        idSistema = presenca.add(sessaoSistema);
+        idCarlos = presenca.add(sessaoCarlos);
+        idOutroChefe = presenca.add(sessaoOutroChefe);
+        idJovem = presenca.add(sessaoJovem);
+    }
+};
+
+// CT-01: justificativa pendente da secao 2; Carlos e o Chefe responsavel.
+// O registro e a analise da justificativa sao externos a esta API.
+static void testAlertasCT01GerarEConsultar() {
+    CenarioAlertas c;
+    Repositorio::instance().justificativas.push_back(Justificativa(20, 7, 12, 2));
+    verify(c.presenca.generatePendingAlerts(c.idSistema),
+        "Alertas CT-01: rotina executada pela sessao do Sistema retorna true");
+    Colecao<Alerta> alertas = c.presenca.query(FiltroAlerta(), c.idCarlos);
+    verify(alertas.size() == 1, "Alertas CT-01: Carlos recebe um alerta");
+    Iterador<Alerta> iterador = alertas.iterator();
+    bool correto = false;
+    if (iterador.hasNext()) {
+        Alerta alerta = iterador.next();
+        correto = alerta.recipientId() == 2 && alerta.justificationId() == 20 && !iterador.hasNext();
+    }
+    verify(correto, "Alertas CT-01: aviso identifica Carlos e a justificativa pendente");
+    verify(c.presenca.query(FiltroAlerta(), c.idOutroChefe).size() == 0,
+        "Alertas CT-01: Chefe de outra secao nao recebe o aviso de Carlos");
+}
+
+// CT-02: a rotina roda novamente e a justificativa continua pendente.
+static void testAlertasCT02SemDuplicar() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
+    bool preparado = c.presenca.generatePendingAlerts(c.idSistema);
+    Colecao<Alerta> antes = c.presenca.query(FiltroAlerta(), c.idCarlos);
+    bool ok = c.presenca.generatePendingAlerts(c.idSistema);
+    Colecao<Alerta> depois = c.presenca.query(FiltroAlerta(), c.idCarlos);
+    verify(preparado && ok && antes.size() == 1 && depois.size() == 1 && repositorio.alertas.size() == 1,
+        "Alertas CT-02: repetir verificacao mantem apenas um alerta");
+    verify(depois.size() == 1 && depois.at(0).recipientId() == 2 && depois.at(0).justificationId() == 20,
+        "Alertas CT-02: alerta continua associado a mesma justificativa e ao mesmo Chefe");
+}
+
+// CT-02: justificativa ja tratada deixa de aparecer na consulta de pendencias.
+static void testAlertasCT02JustificativaTratada() {
+    string estados[] = {"Aceita", "Recusada"};
+    for (const string& estado : estados) {
+        CenarioAlertas c;
+        Repositorio& repositorio = Repositorio::instance();
+        repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
+        bool preparado = c.presenca.generatePendingAlerts(c.idSistema);
+        Colecao<Alerta> antes = c.presenca.query(FiltroAlerta(), c.idCarlos);
+        repositorio.justificativas[0].setStatus(estado);
+        bool ok = c.presenca.generatePendingAlerts(c.idSistema);
+        Colecao<Alerta> depois = c.presenca.query(FiltroAlerta(), c.idCarlos);
+        verify(preparado && antes.size() == 1 && ok && depois.size() == 0,
+            "Alertas CT-02: justificativa " + estado + " deixa a colecao vazia");
+    }
+}
+
 int runFunctionalTests() {
     falhas = 0;
     cout << "\n=== FUNCIONAIS: Cadastrar usuario ===\n";
@@ -638,6 +716,10 @@ int runFunctionalTests() {
     testHistSemRegistros();
     testHistCancelada();
     testHistSessaoInexistente();
+    cout << "\n=== FUNCIONAIS: Alertar justificativa pendente ===\n";
+    testAlertasCT01GerarEConsultar();
+    testAlertasCT02SemDuplicar();
+    testAlertasCT02JustificativaTratada();
     Repositorio::instance().clear();
     Repositorio::instance().clear();
     return falhas;

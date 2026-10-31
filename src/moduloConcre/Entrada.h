@@ -95,4 +95,13 @@ private:
     int idIntegrante_, idSecao_;
 };
 
+// Sem criterios: a Sessao ja delimita os alertas do usuario.
+class FiltroAlerta {
+public:
+    FiltroAlerta();
+    FiltroAlerta(const FiltroAlerta&);
+    FiltroAlerta& operator=(const FiltroAlerta&);
+    ~FiltroAlerta();
+};
+
 #endif // AZIMUTE_SRC_MODULOCONCRE_ENTRADA_H

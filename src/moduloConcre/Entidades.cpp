@@ -81,3 +81,64 @@ void Participacao::attach(int idAtividade, time_t quando) {
     idAtividade_ = idAtividade;
     registradoEm_ = quando;
 }
+
+Justificativa::Justificativa(int id, int idIntegrante, int idAtividade, int idSecao,
+                       const string& estado)
+    : id_(id), idIntegrante_(idIntegrante), idAtividade_(idAtividade),
+      idSecao_(idSecao), estado_(estado) {}
+
+Justificativa::Justificativa(const Justificativa& outro)
+    : id_(outro.id_), idIntegrante_(outro.idIntegrante_), idAtividade_(outro.idAtividade_),
+      idSecao_(outro.idSecao_), estado_(outro.estado_) {}
+
+Justificativa& Justificativa::operator=(const Justificativa& outro) {
+    if (this != &outro) {
+        id_ = outro.id_;
+        idIntegrante_ = outro.idIntegrante_;
+        idAtividade_ = outro.idAtividade_;
+        idSecao_ = outro.idSecao_;
+        estado_ = outro.estado_;
+    }
+    return *this;
+}
+
+Justificativa::~Justificativa() {}
+
+int Justificativa::id() const{ 
+    return id_; 
+}
+
+int Justificativa::sectionId() const{ 
+    return idSecao_; 
+}
+
+string Justificativa::status() const{ 
+    return estado_; 
+}
+
+void Justificativa::setStatus(const string& estado){ 
+    estado_ = estado; 
+}
+
+Alerta::Alerta(int idDestinatario, int idJustificativa)
+    : idDest_(idDestinatario), idJust_(idJustificativa){}
+
+Alerta::Alerta(const Alerta& outro) : idDest_(outro.idDest_), idJust_(outro.idJust_) {}
+
+Alerta& Alerta::operator=(const Alerta& outro){
+    if (this != &outro) {
+        idDest_ = outro.idDest_;
+        idJust_ = outro.idJust_;
+    }
+    return *this;
+}
+
+Alerta::~Alerta(){}
+
+int Alerta::recipientId() const {
+    return idDest_; 
+}
+
+int Alerta::justificationId() const{ 
+    return idJust_; 
+}

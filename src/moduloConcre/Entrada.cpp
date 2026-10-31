@@ -200,3 +200,13 @@ int FiltroHistorico::memberId() const {
 int FiltroHistorico::sectionId() const { 
     return idSecao_; 
 }
+
+FiltroAlerta::FiltroAlerta() {}
+
+FiltroAlerta::FiltroAlerta(const FiltroAlerta&) {}
+
+FiltroAlerta& FiltroAlerta::operator=(const FiltroAlerta&) { 
+    return *this; 
+}
+
+FiltroAlerta::~FiltroAlerta() {}
