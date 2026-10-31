@@ -84,3 +84,6 @@ template class Colecao<Participacao>;
 template class Iterador<Participacao>;
 template class Colecao<Atividade>;
 template class Iterador<Atividade>;
+
+template class Colecao<Alerta>;
+template class Iterador<Alerta>;

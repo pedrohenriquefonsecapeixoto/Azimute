@@ -11,6 +11,8 @@ void Repositorio::clear() {
     usuarios.clear();
     atividades.clear();
     participacoes.clear();
+    justificativas.clear();
+    alertas.clear();
     proximoId_ = 100;
 }
 
@@ -29,6 +31,13 @@ const Atividade* Repositorio::findActivity(int id) const {
     for (size_t indice = 0; indice < atividades.size(); ++indice)
         if (atividades[indice].id() == id) 
             return &atividades[indice];
+    return nullptr;
+}
+
+const Justificativa* Repositorio::findJustification(int id) const {
+    for (size_t indice = 0; indice < justificativas.size(); ++indice)
+        if (justificativas[indice].id() == id) 
+            return &justificativas[indice];
     return nullptr;
 }
 

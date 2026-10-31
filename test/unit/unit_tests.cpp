@@ -905,6 +905,130 @@ static void testAttendancePercentageSemRegistros() {
         && pertoDe(p, -5), "attendancePercentage: atividade cancelada nao entra na contagem");
 }
 
+// ---------- Alertar justificativa pendente ----------
+
+struct CenarioAlertas {
+    Usuario sistema, carlos, outroChefe, jovem;
+    Sessao sessaoSistema, sessaoCarlos, sessaoOutroChefe, sessaoJovem;
+    ServicoPresenca presenca;
+    int idSistema, idCarlos, idOutroChefe, idJovem;
+
+    CenarioAlertas()
+        : sistema(0, DadosUsuario("Sistema", Data(1980, 1, 1), "UEL", "Sistema", 0)),
+          carlos(2, DadosUsuario("Carlos", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)),
+          outroChefe(4, DadosUsuario("Outro Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 3)),
+          jovem(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)),
+          sessaoSistema(sistema), sessaoCarlos(carlos), sessaoOutroChefe(outroChefe), sessaoJovem(jovem) {
+        Repositorio& repositorio = Repositorio::instance();
+        repositorio.clear();
+        repositorio.usuarios.push_back(carlos);
+        repositorio.usuarios.push_back(outroChefe);
+        repositorio.usuarios.push_back(jovem);
+        idSistema = presenca.add(sessaoSistema);
+        idCarlos = presenca.add(sessaoCarlos);
+        idOutroChefe = presenca.add(sessaoOutroChefe);
+        idJovem = presenca.add(sessaoJovem);
+    }
+};
+
+static void testGeneratePendingAlertsPermissoes() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
+    Usuario dirigente(1, DadosUsuario("Dirigente", Data(1980, 1, 1), "UEL", "Dirigente da UEL", 0));
+    Sessao sessaoDirigente(dirigente);
+    int idDirigente = c.presenca.add(sessaoDirigente);
+    int ids[] = {c.idCarlos, c.idOutroChefe, c.idJovem, idDirigente, -1, 999};
+    for (int id : ids) {
+        verify(!c.presenca.generatePendingAlerts(id) && repositorio.alertas.empty(),
+            "generatePendingAlerts: recusa papel ou sessao sem autorizacao: " + to_string(id));
+    }
+    c.presenca.remove(c.idSistema);
+    verify(!c.presenca.generatePendingAlerts(c.idSistema) && repositorio.alertas.empty(),
+        "generatePendingAlerts: recusa sessao do Sistema removida");
+}
+
+static void testGeneratePendingAlertsDestinatarios() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.usuarios.push_back(Usuario(5, DadosUsuario("Outra Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)));
+    repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
+    repositorio.justificativas.push_back(Justificativa(21, 9, 13, 3));
+    verify(c.presenca.generatePendingAlerts(c.idSistema) && repositorio.alertas.size() == 3,
+        "generatePendingAlerts: gera um alerta para cada Chefe da secao da justificativa");
+    bool carlos = false, outraChefe = false, outroChefe = false, indevido = false;
+    for (const Alerta& alerta : repositorio.alertas) {
+        if (alerta.recipientId() == 2 && alerta.justificationId() == 20) carlos = true;
+        else if (alerta.recipientId() == 5 && alerta.justificationId() == 20) outraChefe = true;
+        else if (alerta.recipientId() == 4 && alerta.justificationId() == 21) outroChefe = true;
+        else indevido = true;
+    }
+    verify(carlos && outraChefe && outroChefe && !indevido,
+        "generatePendingAlerts: associa destinatario e justificativa sem avisar Jovem ou outra secao");
+}
+
+static void testGeneratePendingAlertsSemPendencias() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    verify(c.presenca.generatePendingAlerts(c.idSistema) && repositorio.alertas.empty(),
+        "generatePendingAlerts: sem justificativas retorna true sem gerar alertas");
+    repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2, "Aceita"));
+    repositorio.justificativas.push_back(Justificativa(21, 7, 13, 2, "Recusada"));
+    repositorio.justificativas.push_back(Justificativa(22, 9, 14, 9));
+    verify(c.presenca.generatePendingAlerts(c.idSistema) && repositorio.alertas.empty(),
+        "generatePendingAlerts: ignora tratadas e pendencia de secao sem Chefe");
+}
+
+static void testGeneratePendingAlertsDuplicidade() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
+    repositorio.alertas.push_back(Alerta(2, 20));
+    verify(c.presenca.generatePendingAlerts(c.idSistema) && repositorio.alertas.size() == 1,
+        "generatePendingAlerts: preserva alerta existente sem duplicar o par destinatario/justificativa");
+    repositorio.justificativas.push_back(Justificativa(21, 7, 13, 2));
+    verify(c.presenca.generatePendingAlerts(c.idSistema) && repositorio.alertas.size() == 2
+        && repositorio.alertas[1].recipientId() == 2 && repositorio.alertas[1].justificationId() == 21,
+        "generatePendingAlerts: acrescenta nova pendencia do mesmo destinatario");
+    verify(c.presenca.generatePendingAlerts(c.idSistema) && repositorio.alertas.size() == 2,
+        "generatePendingAlerts: repeticao nao duplica alertas");
+}
+
+static void testQueryAlertasDestinatarioEPendencia() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
+    repositorio.justificativas.push_back(Justificativa(21, 9, 13, 3));
+    repositorio.justificativas.push_back(Justificativa(22, 7, 14, 2, "Aceita"));
+    repositorio.justificativas.push_back(Justificativa(23, 7, 15, 2, "Recusada"));
+    repositorio.alertas.push_back(Alerta(2, 20));
+    repositorio.alertas.push_back(Alerta(4, 21));
+    repositorio.alertas.push_back(Alerta(2, 22));
+    repositorio.alertas.push_back(Alerta(2, 23));
+    repositorio.alertas.push_back(Alerta(2, 999));
+    Colecao<Alerta> alertas = c.presenca.query(FiltroAlerta(), c.idCarlos);
+    verify(alertas.size() == 1 && alertas.at(0).recipientId() == 2 && alertas.at(0).justificationId() == 20,
+        "query(FiltroAlerta): retorna apenas pendencia do destinatario; ignora tratadas e inexistentes");
+    Colecao<Alerta> outros = c.presenca.query(FiltroAlerta(), c.idOutroChefe);
+    verify(outros.size() == 1 && outros.at(0).recipientId() == 4 && outros.at(0).justificationId() == 21,
+        "query(FiltroAlerta): outro Chefe recebe somente seu alerta");
+    verify(c.presenca.query(FiltroAlerta(), c.idJovem).size() == 0,
+        "query(FiltroAlerta): usuario sem alertas recebe colecao vazia");
+}
+
+static void testQueryAlertasSessao() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
+    repositorio.alertas.push_back(Alerta(2, 20));
+    verify(c.presenca.query(FiltroAlerta(), -1).size() == 0
+        && c.presenca.query(FiltroAlerta(), 999).size() == 0,
+        "query(FiltroAlerta): sessao inexistente recebe colecao vazia");
+    c.presenca.remove(c.idCarlos);
+    verify(c.presenca.query(FiltroAlerta(), c.idCarlos).size() == 0,
+        "query(FiltroAlerta): sessao removida recebe colecao vazia");
+}
+
 int runUnitTests() {
     falhas = 0;
     cout << "\n=== UNITARIOS: Cadastrar usuario ===\n";
@@ -955,6 +1079,13 @@ int runUnitTests() {
     testAttendancePercentageCalculo();
     testAttendancePercentageNegado();
     testAttendancePercentageSemRegistros();
+    cout << "\n=== UNITARIOS: Alertar justificativa pendente ===\n";
+    testGeneratePendingAlertsPermissoes();
+    testGeneratePendingAlertsDestinatarios();
+    testGeneratePendingAlertsSemPendencias();
+    testGeneratePendingAlertsDuplicidade();
+    testQueryAlertasDestinatarioEPendencia();
+    testQueryAlertasSessao();
     Repositorio::instance().clear();
     return falhas;
 }
