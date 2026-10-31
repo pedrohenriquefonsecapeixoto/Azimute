@@ -701,6 +701,210 @@ static void testRecordingTimeUsaPrimeiroRegistro() {
 }
 
 
+// ---------- Consultar histórico de participação ----------
+
+static bool pertoDe(double a, double b) {
+    double d = a - b;
+    return (d < 0 ? -d : d) < 0.0001;
+}
+
+// Cenario de outubro/2026: Dirigente 1, Chefes 2 (secao 2) e 4 (secao 3),
+// Jovens Ana 7 e Beto 8 (secao 2), Caio 9 (secao 3).
+// Atividades 1 a 4 de outubro (secao 2), 5 em setembro, 6 cancelada, 7 da secao 3.
+// Ana: Presente, Atraso, Ausente, Presente em outubro (3 de 4); mais um registro
+// fora do periodo (5) e outro em atividade cancelada (6).
+struct CenarioHistorico {
+    Usuario dirigente{1, DadosUsuario("Dirigente", Data(1980, 1, 1), "UEL", "Dirigente da UEL", 0)};
+    Usuario carlos{2, DadosUsuario("Carlos", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)};
+    Usuario dora{4, DadosUsuario("Dora", Data(1980, 1, 1), "UEL", "Chefe Escotista", 3)};
+    Usuario ana{7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)};
+    Usuario beto{8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)};
+    Usuario caio{9, DadosUsuario("Caio", Data(2012, 7, 1), "UEL", "Jovem", 3)};
+    Sessao sessaoDirigente{dirigente};
+    Sessao sessaoCarlos{carlos};
+    Sessao sessaoDora{dora};
+    Sessao sessaoAna{ana};
+    Sessao sessaoBeto{beto};
+    ServicoPresenca presenca;
+    int idDirigente, idCarlos, idDora, idAna, idBeto;
+
+    static void guardar(int idAtividade, int dia, int mes, int idSecao, const string& situacao) {
+        Atividade atividade(idAtividade, DadosAtividade("Reuniao", Data(2026, mes, dia), "08:00", "Sede", "Reuniao", "Escoteiro"),
+                            idSecao, situacao);
+        Repositorio::instance().atividades.push_back(atividade);
+    }
+    static void registrar(int idAtividade, int idJovem, const string& situacao) {
+        Participacao participacao(idJovem, situacao);
+        participacao.attach(idAtividade, time(nullptr));
+        Repositorio::instance().participacoes.push_back(participacao);
+    }
+
+    CenarioHistorico() {
+        Repositorio& r = Repositorio::instance();
+        r.clear();
+        r.usuarios.push_back(dirigente);
+        r.usuarios.push_back(carlos);
+        r.usuarios.push_back(dora);
+        r.usuarios.push_back(ana);
+        r.usuarios.push_back(beto);
+        r.usuarios.push_back(caio);
+        guardar(1, 3, 10, 2, "Realizada");
+        guardar(2, 10, 10, 2, "Realizada");
+        guardar(3, 17, 10, 2, "Realizada");
+        guardar(4, 24, 10, 2, "Realizada");
+        guardar(5, 12, 9, 2, "Realizada");
+        guardar(6, 31, 10, 2, "Cancelada");
+        guardar(7, 5, 10, 3, "Realizada");
+        registrar(1, 7, "Presente");
+        registrar(2, 7, "Atraso");
+        registrar(3, 7, "Ausente");
+        registrar(4, 7, "Presente");
+        registrar(5, 7, "Presente");
+        registrar(6, 7, "Presente");
+        registrar(1, 8, "Presente");
+        registrar(2, 8, "Ausente");
+        registrar(7, 9, "Presente");
+        idDirigente = presenca.add(sessaoDirigente);
+        idCarlos = presenca.add(sessaoCarlos);
+        idDora = presenca.add(sessaoDora);
+        idAna = presenca.add(sessaoAna);
+        idBeto = presenca.add(sessaoBeto);
+    }
+    FiltroHistorico outubro(int idIntegrante = 0, int idSecao = 0) const {
+        return FiltroHistorico(Data(2026, 10, 1), Data(2026, 10, 31), idIntegrante, idSecao);
+    }
+};
+
+static void testFiltroHistorico() {
+    FiltroHistorico padrao;
+    verify(padrao.memberId() == 0 && padrao.sectionId() == 0,
+        "FiltroHistorico sem argumentos: integrante e secao 0");
+    FiltroHistorico filtro(Data(2026, 10, 1), Data(2026, 10, 31), 7, 2);
+    verify(filtro.start() == Data(2026, 10, 1) && filtro.end() == Data(2026, 10, 31)
+        && filtro.memberId() == 7 && filtro.sectionId() == 2,
+        "FiltroHistorico guarda inicio, fim, integrante e secao");
+    FiltroHistorico copia(filtro);
+    verify(copia.start() == filtro.start() && copia.end() == filtro.end()
+        && copia.memberId() == 7 && copia.sectionId() == 2, "FiltroHistorico: construtor de copia");
+    FiltroHistorico atribuido;
+    atribuido = filtro;
+    verify(atribuido.start() == filtro.start() && atribuido.end() == filtro.end()
+        && atribuido.memberId() == 7 && atribuido.sectionId() == 2, "FiltroHistorico: atribuicao");
+    FiltroHistorico soPeriodo(Data(2026, 10, 1), Data(2026, 10, 31));
+    verify(soPeriodo.memberId() == 0 && soPeriodo.sectionId() == 0,
+        "FiltroHistorico so com periodo: integrante e secao omitidos valem 0");
+}
+
+static void testQueryHistoricoJovem() {
+    CenarioHistorico c;
+    Colecao<Participacao> proprio = c.presenca.query(c.outubro(), c.idAna);
+    bool todosDaAna = true;
+    for (Iterador<Participacao> i = proprio.iterator(); i.hasNext(); )
+        if (i.next().memberId() != 7) todosDaAna = false;
+    verify(proprio.size() == 4 && todosDaAna, "query: Jovem sem idIntegrante recebe so os 4 registros do periodo");
+    verify(c.presenca.query(c.outubro(7), c.idAna).size() == 4, "query: Jovem pode informar o proprio id");
+    verify(c.presenca.query(c.outubro(8), c.idAna).size() == 0, "query: Jovem consultando outro integrante recebe vazio");
+    verify(c.presenca.query(c.outubro(0, 2), c.idAna).size() == 0, "query: Jovem consultando secao inteira recebe vazio");
+}
+
+static void testQueryHistoricoPeriodo() {
+    CenarioHistorico c;
+    verify(c.presenca.query(FiltroHistorico(Data(2026, 10, 3), Data(2026, 10, 10)), c.idAna).size() == 2,
+        "query: limites do periodo sao inclusivos");
+    verify(c.presenca.query(FiltroHistorico(Data(2026, 9, 1), Data(2026, 9, 30)), c.idAna).size() == 1,
+        "query: periodo de setembro traz so o registro de setembro");
+    verify(c.presenca.query(FiltroHistorico(Data(2026, 11, 1), Data(2026, 11, 30)), c.idAna).size() == 0,
+        "query: periodo sem registros retorna colecao vazia");
+    verify(c.presenca.query(FiltroHistorico(Data(2026, 9, 1), Data(2026, 10, 31)), c.idAna).size() == 5,
+        "query: periodo maior inclui setembro e outubro");
+}
+
+static void testQueryHistoricoChefe() {
+    CenarioHistorico c;
+    verify(c.presenca.query(c.outubro(7), c.idCarlos).size() == 4, "query: Chefe consulta Jovem da propria secao");
+    verify(c.presenca.query(c.outubro(0, 2), c.idCarlos).size() == 6, "query: Chefe consulta a propria secao inteira");
+    verify(c.presenca.query(c.outubro(9), c.idCarlos).size() == 0, "query: Chefe nao ve Jovem de outra secao");
+    verify(c.presenca.query(c.outubro(0, 3), c.idCarlos).size() == 0, "query: Chefe nao ve outra secao");
+    verify(c.presenca.query(c.outubro(2), c.idCarlos).size() == 0, "query: Chefe nao consulta quem nao e Jovem");
+    verify(c.presenca.query(c.outubro(), c.idCarlos).size() == 0, "query: Chefe sem alvo nem secao recebe vazio");
+}
+
+static void testQueryHistoricoDirigente() {
+    CenarioHistorico c;
+    verify(c.presenca.query(c.outubro(7), c.idDirigente).size() == 4, "query: Dirigente consulta qualquer Jovem");
+    verify(c.presenca.query(c.outubro(9), c.idDirigente).size() == 1, "query: Dirigente consulta Jovem de outra secao");
+    verify(c.presenca.query(c.outubro(0, 2), c.idDirigente).size() == 6, "query: Dirigente consulta a secao 2 inteira");
+    verify(c.presenca.query(c.outubro(0, 3), c.idDirigente).size() == 1, "query: Dirigente consulta a secao 3 inteira");
+    verify(c.presenca.query(c.outubro(2), c.idDirigente).size() == 0, "query: Dirigente nao consulta quem nao e Jovem");
+    verify(c.presenca.query(c.outubro(999), c.idDirigente).size() == 0, "query: alvo inexistente retorna vazio");
+}
+
+static void testQueryHistoricoCanceladaESemRegistros() {
+    CenarioHistorico c;
+    Colecao<Participacao> lista = c.presenca.query(FiltroHistorico(Data(2026, 10, 31), Data(2026, 10, 31)), c.idAna);
+    verify(lista.size() == 0, "query: atividade cancelada nao entra na consulta");
+    Repositorio::instance().participacoes.clear();
+    verify(c.presenca.query(c.outubro(), c.idAna).size() == 0, "query: sem registros retorna colecao vazia");
+}
+
+static void testQueryHistoricoSessao() {
+    CenarioHistorico c;
+    Usuario admin(5, DadosUsuario("Adm", Data(1980, 1, 1), "UEL", "Administrador", 0));
+    Sessao sessaoAdmin(admin);
+    int idAdmin = c.presenca.add(sessaoAdmin);
+    verify(c.presenca.query(c.outubro(7), idAdmin).size() == 0, "query: papel sem permissao recebe vazio");
+    verify(c.presenca.query(c.outubro(), -1).size() == 0 && c.presenca.query(c.outubro(), 999).size() == 0,
+        "query: sessao inexistente recebe vazio");
+    c.presenca.remove(c.idAna);
+    verify(c.presenca.query(c.outubro(), c.idAna).size() == 0, "query: sessao removida recebe vazio");
+}
+
+static void testQueryHistoricoResultadoIndependente() {
+    CenarioHistorico c;
+    Colecao<Participacao> lista = c.presenca.query(c.outubro(), c.idAna);
+    lista.set(0, Participacao(99, "Ausente"));
+    verify(Repositorio::instance().participacoes[0].memberId() == 7
+        && c.presenca.query(c.outubro(), c.idAna).at(0).memberId() == 7,
+        "query: alterar o resultado nao altera o repositorio");
+}
+
+static void testAttendancePercentageCalculo() {
+    CenarioHistorico c;
+    double p = -1;
+    verify(c.presenca.attendancePercentage(c.outubro(), p, c.idAna) && pertoDe(p, 75.0),
+        "attendancePercentage: 3 comparecimentos em 4 atividades = 75,0");
+    verify(c.presenca.attendancePercentage(c.outubro(), p, c.idBeto) && pertoDe(p, 50.0),
+        "attendancePercentage: Beto, 1 de 2 = 50,0");
+    verify(c.presenca.attendancePercentage(FiltroHistorico(Data(2026, 10, 10), Data(2026, 10, 10)), p, c.idAna)
+        && pertoDe(p, 100.0), "attendancePercentage: Atraso conta como comparecimento (100,0)");
+    verify(c.presenca.attendancePercentage(FiltroHistorico(Data(2026, 10, 17), Data(2026, 10, 17)), p, c.idAna)
+        && pertoDe(p, 0.0), "attendancePercentage: so Ausente = 0,0 e retorna true");
+    verify(c.presenca.attendancePercentage(c.outubro(0, 2), p, c.idDirigente) && pertoDe(p, 400.0 / 6.0),
+        "attendancePercentage: secao 2 inteira, 4 de 6");
+}
+
+static void testAttendancePercentageNegado() {
+    CenarioHistorico c;
+    double p = -5;
+    verify(!c.presenca.attendancePercentage(c.outubro(8), p, c.idAna) && pertoDe(p, -5),
+        "attendancePercentage: Jovem consultando outro retorna false sem alterar a saida");
+    verify(!c.presenca.attendancePercentage(c.outubro(9), p, c.idCarlos) && pertoDe(p, -5),
+        "attendancePercentage: Chefe de outra secao retorna false sem alterar a saida");
+    verify(!c.presenca.attendancePercentage(c.outubro(2), p, c.idDirigente) && pertoDe(p, -5),
+        "attendancePercentage: alvo que nao e Jovem retorna false");
+    verify(!c.presenca.attendancePercentage(c.outubro(), p, 999) && pertoDe(p, -5),
+        "attendancePercentage: sessao inexistente retorna false");
+}
+
+static void testAttendancePercentageSemRegistros() {
+    CenarioHistorico c;
+    double p = -5;
+    verify(!c.presenca.attendancePercentage(FiltroHistorico(Data(2026, 11, 1), Data(2026, 11, 30)), p, c.idAna)
+        && pertoDe(p, -5), "attendancePercentage: periodo sem registros retorna false sem alterar a saida");
+    verify(!c.presenca.attendancePercentage(FiltroHistorico(Data(2026, 10, 31), Data(2026, 10, 31)), p, c.idAna)
+        && pertoDe(p, -5), "attendancePercentage: atividade cancelada nao entra na contagem");
+}
+
 int runUnitTests() {
     falhas = 0;
     cout << "\n=== UNITARIOS: Cadastrar usuario ===\n";
@@ -739,6 +943,18 @@ int runUnitTests() {
     testRecordPermissoes();
     testRecordingTime();
     testRecordingTimeUsaPrimeiroRegistro();
+    cout << "\n=== UNITARIOS: Consultar historico de participacao ===\n";
+    testFiltroHistorico();
+    testQueryHistoricoJovem();
+    testQueryHistoricoPeriodo();
+    testQueryHistoricoChefe();
+    testQueryHistoricoDirigente();
+    testQueryHistoricoCanceladaESemRegistros();
+    testQueryHistoricoSessao();
+    testQueryHistoricoResultadoIndependente();
+    testAttendancePercentageCalculo();
+    testAttendancePercentageNegado();
+    testAttendancePercentageSemRegistros();
     Repositorio::instance().clear();
     return falhas;
 }

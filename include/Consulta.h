@@ -3,7 +3,7 @@
 
 template <class T> class Colecao;
 
-// T = tipo do resultado, F = tipo do filtro.
+// Contrato de consulta: T = tipo do resultado, F = tipo do filtro.
 template <class T, class F>
 class Consulta {
 public:

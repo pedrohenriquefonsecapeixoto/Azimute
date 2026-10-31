@@ -166,3 +166,37 @@ int FiltroAtividade::sectionId() const {
     return idSecao_; 
 }
 
+FiltroHistorico::FiltroHistorico(const Data& inicio, const Data& fim,
+                         int idIntegrante, int idSecao)
+    : inicio_(inicio), fim_(fim), idIntegrante_(idIntegrante), idSecao_(idSecao) {}
+
+FiltroHistorico::FiltroHistorico(const FiltroHistorico& outro)
+    : inicio_(outro.inicio_), fim_(outro.fim_), idIntegrante_(outro.idIntegrante_), idSecao_(outro.idSecao_) {}
+
+FiltroHistorico& FiltroHistorico::operator=(const FiltroHistorico& outro) {
+    if (this != &outro) {
+        inicio_ = outro.inicio_;
+        fim_ = outro.fim_;
+        idIntegrante_ = outro.idIntegrante_;
+        idSecao_ = outro.idSecao_;
+    }
+    return *this;
+}
+
+FiltroHistorico::~FiltroHistorico() {}
+
+Data FiltroHistorico::start() const { 
+    return inicio_; 
+}
+
+Data FiltroHistorico::end() const { 
+    return fim_; 
+}
+
+int FiltroHistorico::memberId() const { 
+    return idIntegrante_; 
+}
+
+int FiltroHistorico::sectionId() const { 
+    return idSecao_; 
+}
