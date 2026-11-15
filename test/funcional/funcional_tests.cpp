@@ -102,6 +102,126 @@ static void testCadastroSessaoNaoDirigente() {
     assert(repositorio.usuarios.empty() && "sem Dirigente em sessao: nenhum usuario e criado");
 }
 
+// ---------- Cadastrar atividade/evento ----------
+
+static bool igualAtv(const Atividade& a, const Atividade& b) {
+    return a.id() == b.id() && a.details().title() == b.details().title()
+        && a.details().date() == b.details().date() && a.details().startTime() == b.details().startTime()
+        && a.details().place() == b.details().place() && a.details().type() == b.details().type()
+        && a.details().branch() == b.details().branch() && a.sectionId() == b.sectionId()
+        && a.status() == b.status() && a.members() == b.members();
+}
+
+// Chefe da secao 2; Jovens 10 e 11 na secao 2, Jovem 12 na secao 3.
+static void prepararSecoes(const Usuario& chefe) {
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.clear();
+    repositorio.usuarios.push_back(chefe);
+    repositorio.usuarios.push_back(Usuario(10, DadosUsuario("Jovem A", Data(2012, 1, 1), "UEL", "Jovem", 2)));
+    repositorio.usuarios.push_back(Usuario(11, DadosUsuario("Jovem B", Data(2012, 2, 2), "UEL", "Jovem", 2)));
+    repositorio.usuarios.push_back(Usuario(12, DadosUsuario("Jovem C", Data(2012, 3, 3), "UEL", "Jovem", 3)));
+}
+
+// Cadastrar atividade, CT-01: Chefe da secao 2 com dados completos.
+static void testAtvCT01CadastroValido() {
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    prepararSecoes(chefe);
+    Sessao sessaoChefe(chefe);
+    ServicoAtividades atividades;
+    int idChefe = atividades.add(sessaoChefe);
+    DadosAtividade dados("Acampamento de Primavera", Data(2026, 11, 15), "08:30", "Sede", "Acampamento", "Escoteiro");
+    Atividade nova;
+    bool ok = atividades.registrar(dados, nova, idChefe);
+    assert(ok && "CT-01: registrar deve retornar true");
+    assert(nova.id() >= 100 && "CT-01: atividade recebe id proprio");
+    assert(nova.status() == "Confirmada" && "CT-01: situacao Confirmada, sem pedido ao Dirigente");
+    assert(nova.sectionId() == 2 && "CT-01: secao do Chefe");
+    Repositorio& repositorio = Repositorio::instance();
+    assert(repositorio.atividades.size() == 1 && "CT-01: exatamente uma atividade foi gravada");
+    const Atividade* salva = repositorio.findActivity(nova.id());
+    assert(salva != nullptr && "CT-01: a atividade gravada e encontrada pelo id devolvido");
+    assert(igualAtv(nova, *salva) && "CT-01: a atividade de saida e identica a gravada");
+    assert(salva->details().title() == "Acampamento de Primavera" && "CT-01: titulo gravado");
+    assert(salva->details().startTime() == "08:30" && "CT-01: horario gravado");
+    assert(nova.members().size() == 2 && "CT-01: so os 2 Jovens da secao do Chefe sao inscritos");
+    assert(nova.members()[0] == 10 && nova.members()[1] == 11 && "CT-01: inscritos 10 e 11 (o Jovem 12 e de outra secao)");
+}
+
+// Cadastrar atividade, CT-02: campo obrigatorio vazio (sem titulo).
+static void testAtvCT02SemTitulo() {
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    prepararSecoes(chefe);
+    Sessao sessaoChefe(chefe);
+    ServicoAtividades atividades;
+    int idChefe = atividades.add(sessaoChefe);
+    DadosAtividade dados("", Data(2026, 11, 15), "08:30", "Sede", "Acampamento", "Escoteiro");
+    Atividade original(77, DadosAtividade("Anterior", Data(2026, 1, 1), "10:00", "Outro", "Reuniao", "Lobinho"), 3, "Realizada");
+    Atividade nova = original;
+    bool ok = atividades.registrar(dados, nova, idChefe);
+    assert(!ok && "CT-02: registrar sem titulo deve retornar false");
+    assert(Repositorio::instance().atividades.empty() && "CT-02: nenhuma atividade e criada");
+    assert(igualAtv(nova, original) && "CT-02: a atividade de saida nao muda");
+}
+
+// Cadastrar atividade: horario invalido.
+static void testAtvHorarioInvalido() {
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    prepararSecoes(chefe);
+    Sessao sessaoChefe(chefe);
+    ServicoAtividades atividades;
+    int idChefe = atividades.add(sessaoChefe);
+    const string horarios[] = {"25:00", "8:00"};
+    for (const string& horario : horarios) {
+        DadosAtividade dados("Reuniao", Data(2026, 11, 15), horario, "Sede", "Reuniao", "Escoteiro");
+        Atividade nova;
+        bool ok = atividades.registrar(dados, nova, idChefe);
+        assert(!ok && "horario fora do formato HH:MM (25:00 ou 8:00): registrar retorna false");
+        assert(Repositorio::instance().atividades.empty() && "horario invalido: nenhuma atividade e criada");
+    }
+}
+
+// Cadastrar atividade: sessao que nao e de Chefe.
+static void testAtvSessaoNaoChefe() {
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    prepararSecoes(chefe);
+    Usuario jovem(10, DadosUsuario("Jovem A", Data(2012, 1, 1), "UEL", "Jovem", 2));
+    Sessao sessaoJovem(jovem);
+    ServicoAtividades atividades;
+    int idJovem = atividades.add(sessaoJovem);
+    DadosAtividade dados("Reuniao", Data(2026, 11, 15), "08:30", "Sede", "Reuniao", "Escoteiro");
+    Atividade nova;
+    bool ok = atividades.registrar(dados, nova, idJovem);
+    assert(!ok && "sessao de Jovem: registrar retorna false");
+    assert(Repositorio::instance().atividades.empty() && "sessao de Jovem: nenhuma atividade e criada");
+}
+
+class RegraSemAcampamento : public Regra<DadosAtividade> {
+public:
+    bool allows(const DadosAtividade& dados) const override { 
+        return dados.type() != "Acampamento"; 
+    }
+};
+
+// Cadastrar atividade: Regra do cliente que recusa o tipo.
+static void testAtvRegraDoCliente() {
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    prepararSecoes(chefe);
+    Sessao sessaoChefe(chefe);
+    ServicoAtividades atividades;
+    int idChefe = atividades.add(sessaoChefe);
+    RegraSemAcampamento regra;
+    atividades.add(regra);
+    Atividade nova;
+    DadosAtividade recusada("Acampamento", Data(2026, 11, 15), "08:30", "Sede", "Acampamento", "Escoteiro");
+    bool okRecusada = atividades.registrar(recusada, nova, idChefe);
+    assert(!okRecusada && "regra do cliente que recusa o tipo: registrar retorna false");
+    assert(Repositorio::instance().atividades.empty() && "regra do cliente: nenhuma atividade e criada");
+    DadosAtividade aceita("Reuniao", Data(2026, 11, 15), "08:30", "Sede", "Reuniao", "Escoteiro");
+    bool okAceita = atividades.registrar(aceita, nova, idChefe);
+    assert(okAceita && "tipo aceito pela regra do cliente: registrar retorna true");
+    assert(Repositorio::instance().atividades.size() == 1 && "tipo aceito: a atividade e gravada");
+}
+
 static void executar(const char* nome, void (*teste)()) {
     teste();
     cout << "[OK] " << nome << '\n';
@@ -113,4 +233,10 @@ void runFunctionalTests() {
     executar("CT-02 cadastro duplicado", testCT02CadastroDuplicado);
     executar("campos invalidos", testCadastroCamposInvalidos);
     executar("sessao que nao e de Dirigente", testCadastroSessaoNaoDirigente);
+    cout << "\n=== FUNCIONAIS: Cadastrar atividade/evento ===\n";
+    executar("CT-01 cadastro valido", testAtvCT01CadastroValido);
+    executar("CT-02 sem titulo", testAtvCT02SemTitulo);
+    executar("horario invalido", testAtvHorarioInvalido);
+    executar("sessao que nao e de Chefe", testAtvSessaoNaoChefe);
+    executar("regra do cliente", testAtvRegraDoCliente);
 }
