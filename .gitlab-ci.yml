@@ -22,6 +22,5 @@ validar:
   artifacts:
     paths:
       - bin/azimute
-      - bin/teste_unitario
       - bin/teste_funcional
     expire_in: 1 week
