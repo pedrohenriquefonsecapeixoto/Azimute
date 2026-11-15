@@ -222,6 +222,87 @@ static void testAtvRegraDoCliente() {
     assert(Repositorio::instance().atividades.size() == 1 && "tipo aceito: a atividade e gravada");
 }
 
+
+// ---------- Consultar atividade/evento ----------
+
+struct CenarioConsulta {
+    Usuario chefe{2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)};
+    Sessao sessaoChefe{chefe};
+    ServicoAtividades atividades;
+    int idChefe = atividades.add(sessaoChefe);
+    CenarioConsulta() { Repositorio::instance().clear(); }
+    ~CenarioConsulta() { Repositorio::instance().clear(); }
+};
+
+
+// CT-01: tres atividades em outubro/2026 na secao do Chefe; uma Confirmada.
+static void testConsultaCT01FiltrarEVisualizarDetalhes() {
+    CenarioConsulta cenario;
+    DadosAtividade dados("Acampamento de Outubro", Data(2026, 10, 3), "08:00",
+        "Parque Estadual", "Acampamento", "Escoteiro", "Acampamento da secao 2");
+    // Situacoes preexistentes sao preparacao do cenario, nao novas funcionalidades.
+    Atividade confirmada(10, dados, 2, "Confirmada");
+    confirmada.enroll(7);
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.atividades.push_back(confirmada);
+    repositorio.atividades.push_back(Atividade(11, DadosAtividade("Reuniao", Data(2026, 10, 10), "09:00", "Sede", "Reuniao", "Escoteiro"), 2, "Cancelada"));
+    repositorio.atividades.push_back(Atividade(12, DadosAtividade("Trilha", Data(2026, 10, 17), "07:00", "Parque", "Passeio", "Escoteiro"), 2, "Realizada"));
+
+    FiltroAtividade filtro(Data(2026, 10, 1), Data(2026, 10, 31), "Confirmada");
+    Colecao<Atividade> lista = cenario.atividades.query(filtro, cenario.idChefe);
+    assert(lista.size() == 1 && "CT-01: a Colecao tem tamanho 1 (so a Confirmada)");
+    Iterador<Atividade> it = lista.iterator();
+    assert(it.hasNext() && "CT-01: o iterador tem a atividade");
+    const Atividade& a = it.next();   // avanca o iterador FORA do assert
+    assert(a.id() == 10 && "CT-01: e a atividade Confirmada (id 10)");
+    assert(a.sectionId() == 2 && a.status() == "Confirmada" && "CT-01: secao 2 e situacao Confirmada");
+    assert(a.details().title() == dados.title() && "CT-01: titulo");
+    assert(a.details().date() == dados.date() && a.details().startTime() == dados.startTime() && "CT-01: data e horario");
+    assert(a.details().place() == dados.place() && "CT-01: local");
+    assert(a.details().type() == dados.type() && a.details().branch() == dados.branch() && "CT-01: tipo e ramo");
+    assert(a.details().description() == dados.description() && "CT-01: descricao");
+    assert(a.members().size() == 1 && a.members()[0] == 7 && "CT-01: integrante inscrito");
+    assert(!it.hasNext() && "CT-01: Cancelada e Realizada nao aparecem na lista");
+    assert(repositorio.atividades.size() == 3 && "CT-01: a consulta nao remove atividades cadastradas");
+}
+
+// CT-02, primeira alternativa: nenhuma atividade no periodo pedido.
+static void testConsultaCT02SemAtividadesNoPeriodo() {
+    CenarioConsulta cenario;
+    Repositorio::instance().atividades.push_back(Atividade(10,
+        DadosAtividade("Reuniao", Data(2026, 9, 30), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada"));
+    Colecao<Atividade> lista = cenario.atividades.query(
+        FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31)), cenario.idChefe);
+    assert(lista.size() == 0 && "CT-02a: periodo sem atividades devolve Colecao vazia (tamanho 0)");
+    assert(!lista.iterator().hasNext() && "CT-02a: o iterador nao tem itens");
+}
+
+// CT-02, segunda alternativa: so existem atividades de outra secao.
+static void testConsultaCT02AtividadesDeOutraSecao() {
+    CenarioConsulta cenario;
+    Repositorio::instance().atividades.push_back(Atividade(10,
+        DadosAtividade("Reuniao da secao 3", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 3, "Confirmada"));
+    Colecao<Atividade> lista = cenario.atividades.query(
+        FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31)), cenario.idChefe);
+    assert(lista.size() == 0 && "CT-02b: atividades de outra secao nao sao mostradas ao Chefe");
+    assert(!lista.iterator().hasNext() && "CT-02b: o iterador nao tem itens");
+}
+
+// Consultar atividade: so o Chefe consulta.
+static void testConsultaSessaoNaoChefe() {
+    CenarioConsulta cenario;
+    Repositorio::instance().atividades.push_back(Atividade(10,
+        DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada"));
+    Usuario jovem(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2));
+    Sessao sessaoJovem(jovem);
+    int idJovem = cenario.atividades.add(sessaoJovem);
+    FiltroAtividade outubro(Data(2026, 10, 1), Data(2026, 10, 31));
+    assert(cenario.atividades.query(outubro, idJovem).size() == 0 && "sessao de Jovem: Colecao vazia");
+    assert(cenario.atividades.query(outubro, 999).size() == 0 && "sessao inexistente: Colecao vazia");
+    assert(cenario.atividades.query(outubro, cenario.idChefe).size() == 1 && "controle: o Chefe da secao ve a atividade");
+}
+
+
 static void executar(const char* nome, void (*teste)()) {
     teste();
     cout << "[OK] " << nome << '\n';
@@ -239,4 +320,9 @@ void runFunctionalTests() {
     executar("horario invalido", testAtvHorarioInvalido);
     executar("sessao que nao e de Chefe", testAtvSessaoNaoChefe);
     executar("regra do cliente", testAtvRegraDoCliente);
+    cout << "\n=== FUNCIONAIS: Consultar atividade/evento ===\n";
+    executar("CT-01 filtrar e visualizar detalhes", testConsultaCT01FiltrarEVisualizarDetalhes);
+    executar("CT-02a sem atividades no periodo", testConsultaCT02SemAtividadesNoPeriodo);
+    executar("CT-02b atividades de outra secao", testConsultaCT02AtividadesDeOutraSecao);
+    executar("sessao que nao e de Chefe", testConsultaSessaoNaoChefe);
 }
