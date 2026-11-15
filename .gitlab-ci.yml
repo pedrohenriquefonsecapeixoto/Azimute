@@ -18,7 +18,7 @@ validar:
   tags:
     - saas-linux-small-amd64
   script:
-    - make all test
+    - make run_func
   artifacts:
     paths:
       - bin/azimute
