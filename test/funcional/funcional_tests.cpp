@@ -302,6 +302,203 @@ static void testConsultaSessaoNaoChefe() {
     assert(cenario.atividades.query(outubro, cenario.idChefe).size() == 1 && "controle: o Chefe da secao ve a atividade");
 }
 
+// ---------- Registrar presenca, ausencia ou atraso ----------
+
+// CT-01: atividade 12 encerrada, nao cancelada, da secao do Chefe, integrantes 7 e 8.
+static void testPresCT01RegistroValido() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    encerrada.enroll(8);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    Colecao<Usuario> integrantes = presenca.listMembers(12, idChefe);
+    assert(integrantes.size() == 2 && "CT-01: listMembers apresenta 2 integrantes");
+    assert(integrantes.at(0).id() == 7 && integrantes.at(1).id() == 8 && "CT-01: integrantes 7 e 8");
+    Colecao<Participacao> lista;
+    lista.add(Participacao(7, "Presente"));
+    lista.add(Participacao(8, "Atraso"));
+    bool gravou = presenca.record(12, lista, idChefe);
+    const vector<Participacao>& v = r.participacoes;
+    assert(gravou && "CT-01: record deve retornar true");
+    assert(v.size() == 2 && "CT-01: as duas participacoes foram gravadas");
+    assert(v[0].memberId() == 7 && v[0].status() == "Presente" && "CT-01: integrante 7 Presente");
+    assert(v[1].memberId() == 8 && v[1].status() == "Atraso" && "CT-01: integrante 8 Atraso");
+    assert(v[0].activityId() == 12 && v[1].activityId() == 12 && "CT-01: participacoes vinculadas a atividade 12");
+    int minutos = -1;
+    bool medido = presenca.recordingTime(12, minutos, idChefe);
+    assert(medido && "CT-01: recordingTime deve retornar true");
+    assert(minutos >= 0 && "CT-01: minutos desde o fim da atividade (nunca negativo)");
+}
+
+// CT-02: integrante 8 ja tem situacao registrada na atividade 12.
+static void testPresCT02Duplicado() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    encerrada.enroll(8);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    Colecao<Participacao> lista;
+    lista.add(Participacao(7, "Presente"));
+    lista.add(Participacao(8, "Atraso"));
+    bool preparado = presenca.record(12, lista, idChefe);
+    assert(preparado && "CT-02 (preparo): o primeiro registro deve funcionar");
+    bool dup = presenca.record(12, Participacao(8, "Ausente"), idChefe);
+    assert(!dup && "CT-02: registrar de novo o integrante 8 deve retornar false");
+    const vector<Participacao>& v = r.participacoes;
+    assert(v.size() == 2 && "CT-02: nenhuma participacao nova e gravada");
+    bool mantida = false;
+    for (size_t i = 0; i < v.size(); ++i)
+        if (v[i].memberId() == 8 && v[i].activityId() == 12) 
+            mantida = (v[i].status() == "Atraso");
+    assert(mantida && "CT-02: a situacao anterior do integrante 8 (Atraso) permanece");
+}
+
+// Atividade que ainda nao terminou.
+static void testPresAtividadeEmAndamento() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    Atividade futura(13, DadosAtividade("Reuniao", Data(2099, 1, 1), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    futura.enroll(7);
+    futura.enroll(8);
+    r.atividades.push_back(futura);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    Colecao<Participacao> lista;
+    lista.add(Participacao(7, "Presente"));
+    lista.add(Participacao(8, "Presente"));
+    bool gravou = presenca.record(13, lista, idChefe);
+    assert(!gravou && "atividade em andamento: record retorna false");
+    assert(r.participacoes.empty() && "atividade em andamento: nada e gravado");
+    int minutos = -1;
+    bool medido = presenca.recordingTime(13, minutos, idChefe);
+    assert(!medido && "atividade em andamento: recordingTime retorna false");
+    assert(minutos == -1 && "atividade em andamento: minutos nao e alterado");
+}
+
+// Lote invalido (tudo ou nada).
+static void testPresLoteInvalido() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(9, DadosUsuario("Caio", Data(2012, 7, 1), "UEL", "Jovem", 3)));
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    encerrada.enroll(8);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    Colecao<Participacao> lote;
+    lote.add(Participacao(7, "Presente"));
+    lote.add(Participacao(8, "Faltou"));
+    bool okSituacao = presenca.record(12, lote, idChefe);
+    assert(!okSituacao && "lote com situacao invalida (Faltou): record retorna false");
+    assert(r.participacoes.empty() && "lote com situacao invalida: nenhum item e gravado (tudo ou nada)");
+    Colecao<Participacao> comNaoInscrito;
+    comNaoInscrito.add(Participacao(7, "Presente"));
+    comNaoInscrito.add(Participacao(9, "Presente"));
+    bool okInscrito = presenca.record(12, comNaoInscrito, idChefe);
+    assert(!okInscrito && "lote com integrante nao inscrito: record retorna false");
+    assert(r.participacoes.empty() && "lote com integrante nao inscrito: nenhum item e gravado");
+}
+
+// Chefe de outra secao.
+static void testPresOutraSecao() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    Usuario chefeOutro(4, DadosUsuario("Chefe 3", Data(1980, 1, 1), "UEL", "Chefe Escotista", 3));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(chefeOutro);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    encerrada.enroll(8);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoChefe(chefe), sessaoOutro(chefeOutro);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    int idOutro = presenca.add(sessaoOutro);
+    Colecao<Participacao> lista;
+    lista.add(Participacao(7, "Presente"));
+    lista.add(Participacao(8, "Presente"));
+    assert(presenca.listMembers(12, idOutro).size() == 0 && "outra secao: listMembers vazio");
+    bool okOutro = presenca.record(12, lista, idOutro);
+    assert(!okOutro && "outra secao: record retorna false");
+    assert(r.participacoes.empty() && "outra secao: nada e gravado");
+    bool okChefe = presenca.record(12, lista, idChefe);
+    assert(okChefe && "controle: o Chefe da secao consegue registrar a mesma lista");
+    int minutos = -1;
+    bool medido = presenca.recordingTime(12, minutos, idOutro);
+    assert(!medido && "outra secao: recordingTime retorna false mesmo com registros");
+    assert(minutos == -1 && "outra secao: minutos nao e alterado");
+}
+
+// Atividade cancelada.
+static void testPresCancelada() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    r.usuarios.push_back(chefe);
+    r.usuarios.push_back(Usuario(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)));
+    r.usuarios.push_back(Usuario(8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)));
+    Atividade cancelada(14, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Cancelada");
+    cancelada.enroll(7);
+    cancelada.enroll(8);
+    r.atividades.push_back(cancelada);
+    Sessao sessaoChefe(chefe);
+    ServicoPresenca presenca;
+    int idChefe = presenca.add(sessaoChefe);
+    Colecao<Participacao> lista;
+    lista.add(Participacao(7, "Presente"));
+    lista.add(Participacao(8, "Presente"));
+    bool gravou = presenca.record(14, lista, idChefe);
+    assert(!gravou && "atividade cancelada: record retorna false");
+    assert(r.participacoes.empty() && "atividade cancelada: nada e gravado");
+}
+
+// Sessao de Jovem.
+static void testPresSessaoJovem() {
+    Repositorio& r = Repositorio::instance();
+    r.clear();
+    Usuario jovem(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2));
+    r.usuarios.push_back(jovem);
+    Atividade encerrada(12, DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada");
+    encerrada.enroll(7);
+    r.atividades.push_back(encerrada);
+    Sessao sessaoJovem(jovem);
+    ServicoPresenca presenca;
+    int idJovem = presenca.add(sessaoJovem);
+    assert(presenca.listMembers(12, idJovem).size() == 0 && "sessao de Jovem: listMembers vazio");
+    bool gravou = presenca.record(12, Participacao(7, "Presente"), idJovem);
+    assert(!gravou && "sessao de Jovem: record retorna false");
+    assert(r.participacoes.empty() && "sessao de Jovem: nada e gravado");
+}
 
 static void executar(const char* nome, void (*teste)()) {
     teste();
@@ -325,4 +522,12 @@ void runFunctionalTests() {
     executar("CT-02a sem atividades no periodo", testConsultaCT02SemAtividadesNoPeriodo);
     executar("CT-02b atividades de outra secao", testConsultaCT02AtividadesDeOutraSecao);
     executar("sessao que nao e de Chefe", testConsultaSessaoNaoChefe);
+    cout << "\n=== FUNCIONAIS: Registrar presenca, ausencia ou atraso ===\n";
+    executar("CT-01 registro valido", testPresCT01RegistroValido);
+    executar("CT-02 integrante ja registrado", testPresCT02Duplicado);
+    executar("atividade em andamento", testPresAtividadeEmAndamento);
+    executar("lote invalido (tudo ou nada)", testPresLoteInvalido);
+    executar("Chefe de outra secao", testPresOutraSecao);
+    executar("atividade cancelada", testPresCancelada);
+    executar("sessao de Jovem", testPresSessaoJovem);
 }
