@@ -91,9 +91,6 @@ Os testes estão organizados por caso de uso, na mesma ordem das issues:
 | Consultar histórico de participação | #7 |
 | Alertar sobre justificativa pendente | #8 |
 
-Os testes que usam a atividade de 03/10/2026 dependem do relógio do computador estar depois dessa data (a atividade precisa ter terminado).
-
-
 ## Limites do produto
 
 Não faz parte do escopo:
