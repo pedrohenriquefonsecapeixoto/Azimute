@@ -66,7 +66,6 @@ Requisitos: `g++` com suporte a C++17 e `make`.
 | --- | --- |
 | `make build` | Compila a aplicação em `bin/azimute`. |
 | `make run` | Compila e executa a aplicação (menu de console com os três atores). |
-| `make build_func` | Compila os testes funcionais em `bin/teste_funcional`. |
 | `make run_func` | Compila e roda os testes funcionais. |
 | `make clean` | Remove os executáveis gerados. |
 
