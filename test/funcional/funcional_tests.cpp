@@ -682,6 +682,116 @@ static void testHistSessaoInexistente() {
     assert(c.presenca.query(c.outubro(0, 2), c.idCarlos).size() == 6 && "remover a sessao da Ana nao afeta as demais (Carlos)");
 }
 
+// ---------- Alertar justificativa pendente ----------
+
+struct CenarioAlertas {
+    Usuario sistema, carlos, outroChefe, jovem;
+    Sessao sessaoSistema, sessaoCarlos, sessaoOutroChefe, sessaoJovem;
+    ServicoPresenca presenca;
+    int idSistema, idCarlos, idOutroChefe, idJovem;
+
+    CenarioAlertas()
+        : sistema(0, DadosUsuario("Sistema", Data(1980, 1, 1), "UEL", "Sistema", 0)),
+          carlos(2, DadosUsuario("Carlos", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)),
+          outroChefe(4, DadosUsuario("Outro Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 3)),
+          jovem(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)),
+          sessaoSistema(sistema), sessaoCarlos(carlos), sessaoOutroChefe(outroChefe), sessaoJovem(jovem) {
+        Repositorio& repositorio = Repositorio::instance();
+        repositorio.clear();
+        repositorio.usuarios.push_back(carlos);
+        repositorio.usuarios.push_back(outroChefe);
+        repositorio.usuarios.push_back(jovem);
+        idSistema = presenca.add(sessaoSistema);
+        idCarlos = presenca.add(sessaoCarlos);
+        idOutroChefe = presenca.add(sessaoOutroChefe);
+        idJovem = presenca.add(sessaoJovem);
+    }
+};
+
+// CT-01: justificativa pendente da secao 2; Carlos e o Chefe responsavel.
+// O registro e a analise da justificativa sao externos a esta API.
+static void testAlertasCT01GerarEConsultar() {
+    CenarioAlertas c;
+    Repositorio::instance().justificativas.push_back(Justificativa(20, 7, 12, 2));
+    bool rodou = c.presenca.generatePendingAlerts(c.idSistema);
+    assert(rodou && "Alertas CT-01: a rotina executada pela sessao do Sistema retorna true");
+    Colecao<Alerta> alertas = c.presenca.query(FiltroAlerta(), c.idCarlos);
+    assert(alertas.size() == 1 && "Alertas CT-01: a Colecao do Carlos tem 1 alerta");
+    Iterador<Alerta> iterador = alertas.iterator();
+    assert(iterador.hasNext() && "Alertas CT-01: o iterador tem o alerta");
+    Alerta alerta = iterador.next();   // avanca o iterador FORA do assert
+    assert(alerta.recipientId() == 2 && "Alertas CT-01: o destinatario e o Carlos");
+    assert(alerta.justificationId() == 20 && "Alertas CT-01: o alerta indica a justificativa 20");
+    assert(!iterador.hasNext() && "Alertas CT-01: nao ha segundo alerta");
+    assert(c.presenca.query(FiltroAlerta(), c.idOutroChefe).size() == 0 && "Alertas CT-01: Chefe de outra secao nao recebe o aviso");
+    assert(c.presenca.query(FiltroAlerta(), c.idJovem).size() == 0 && "Alertas CT-01: o Jovem nao recebe alertas de Chefe");
+}
+
+// CT-02: a rotina roda novamente e a justificativa continua pendente.
+static void testAlertasCT02SemDuplicar() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
+    bool primeira = c.presenca.generatePendingAlerts(c.idSistema);
+    Colecao<Alerta> antes = c.presenca.query(FiltroAlerta(), c.idCarlos);
+    assert(primeira && antes.size() == 1 && "Alertas CT-02 (preparo): a primeira rotina gera 1 alerta");
+    bool segunda = c.presenca.generatePendingAlerts(c.idSistema);
+    Colecao<Alerta> depois = c.presenca.query(FiltroAlerta(), c.idCarlos);
+    assert(segunda && "Alertas CT-02: a rotina repetida retorna true");
+    assert(depois.size() == 1 && "Alertas CT-02: continua 1 alerta na Colecao do Carlos");
+    assert(repositorio.alertas.size() == 1 && "Alertas CT-02: o Repositorio nao ganhou alerta duplicado");
+    assert(depois.at(0).recipientId() == 2 && "Alertas CT-02: mesmo destinatario");
+    assert(depois.at(0).justificationId() == 20 && "Alertas CT-02: mesma justificativa");
+}
+
+// CT-02: justificativa ja tratada deixa de aparecer na consulta de pendencias.
+static void testAlertasCT02JustificativaTratada() {
+    string estados[] = {"Aceita", "Recusada"};
+    for (const string& estado : estados) {
+        CenarioAlertas c;
+        Repositorio& repositorio = Repositorio::instance();
+        repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
+        bool preparado = c.presenca.generatePendingAlerts(c.idSistema);
+        Colecao<Alerta> antes = c.presenca.query(FiltroAlerta(), c.idCarlos);
+        assert(preparado && antes.size() == 1 && "Alertas CT-02 (preparo): o alerta existe enquanto a justificativa esta pendente");
+        repositorio.justificativas[0].setStatus(estado);   // o tratamento acontece fora desta API
+        bool ok = c.presenca.generatePendingAlerts(c.idSistema);
+        Colecao<Alerta> depois = c.presenca.query(FiltroAlerta(), c.idCarlos);
+        assert(ok && "Alertas CT-02: a rotina retorna true");
+        assert(depois.size() == 0 && "Alertas CT-02: justificativa Aceita ou Recusada deixa a Colecao vazia");
+    }
+}
+
+// Alternativa: sem pendencias (ou ja tratadas), nenhum alerta e gerado.
+static void testAlertasSemPendencias() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    bool semNada = c.presenca.generatePendingAlerts(c.idSistema);
+    assert(semNada && "sem justificativas: a rotina retorna true");
+    assert(repositorio.alertas.empty() && "sem justificativas: nenhum alerta e gerado");
+    repositorio.justificativas.push_back(Justificativa(21, 7, 12, 2, "Aceita"));
+    bool jaTratada = c.presenca.generatePendingAlerts(c.idSistema);
+    assert(jaTratada && "justificativa ja tratada: a rotina retorna true");
+    assert(repositorio.alertas.empty() && "justificativa ja tratada: nenhum alerta e gerado");
+    assert(c.presenca.query(FiltroAlerta(), c.idCarlos).size() == 0 && "sem pendencias: Colecao do Carlos vazia");
+}
+
+// A rotina so roda na sessao do Sistema.
+static void testAlertasSoSessaoDoSistema() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
+    bool comoChefe = c.presenca.generatePendingAlerts(c.idCarlos);
+    bool comoJovem = c.presenca.generatePendingAlerts(c.idJovem);
+    bool semSessao = c.presenca.generatePendingAlerts(999);
+    assert(!comoChefe && "sessao de Chefe: generatePendingAlerts retorna false");
+    assert(!comoJovem && "sessao de Jovem: generatePendingAlerts retorna false");
+    assert(!semSessao && "sessao inexistente: generatePendingAlerts retorna false");
+    assert(repositorio.alertas.empty() && "fora da sessao do Sistema nenhum alerta e gerado");
+    bool comoSistema = c.presenca.generatePendingAlerts(c.idSistema);
+    assert(comoSistema && "controle: a sessao do Sistema roda a rotina");
+    assert(repositorio.alertas.size() == 1 && "controle: o alerta so existe depois da rotina do Sistema");
+}
 
 static void executar(const char* nome, void (*teste)()) {
     teste();
@@ -722,4 +832,11 @@ void runFunctionalTests() {
     executar("sem registros no periodo", testHistSemRegistros);
     executar("atividade cancelada", testHistCancelada);
     executar("sessao inexistente ou removida", testHistSessaoInexistente);
+    cout << "\n=== FUNCIONAIS: Alertar justificativa pendente ===\n";
+    executar("CT-01 gerar e consultar", testAlertasCT01GerarEConsultar);
+    executar("CT-02 repetir sem duplicar", testAlertasCT02SemDuplicar);
+    executar("CT-02 justificativa tratada", testAlertasCT02JustificativaTratada);
+    executar("sem pendencias", testAlertasSemPendencias);
+    executar("rotina so na sessao do Sistema", testAlertasSoSessaoDoSistema);
+    Repositorio::instance().clear();
 }
