@@ -500,6 +500,189 @@ static void testPresSessaoJovem() {
     assert(r.participacoes.empty() && "sessao de Jovem: nada e gravado");
 }
 
+// ---------- Consultar historico de participacao ----------
+
+static bool pertoDe(double a, double b) {
+    double d = a - b;
+    return (d < 0 ? -d : d) < 0.0001;
+}
+
+// Cenario de outubro/2026: Dirigente 1, Chefes 2 (secao 2) e 4 (secao 3),
+// Jovens Ana 7 e Beto 8 (secao 2), Caio 9 (secao 3).
+// Atividades 1 a 4 de outubro (secao 2), 5 em setembro, 6 cancelada, 7 da secao 3.
+// Ana: Presente, Atraso, Ausente, Presente em outubro (3 de 4); mais um registro
+// fora do periodo (5) e outro em atividade cancelada (6).
+struct CenarioHistorico {
+    Usuario dirigente{1, DadosUsuario("Dirigente", Data(1980, 1, 1), "UEL", "Dirigente da UEL", 0)};
+    Usuario carlos{2, DadosUsuario("Carlos", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)};
+    Usuario dora{4, DadosUsuario("Dora", Data(1980, 1, 1), "UEL", "Chefe Escotista", 3)};
+    Usuario ana{7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2)};
+    Usuario beto{8, DadosUsuario("Beto", Data(2012, 6, 1), "UEL", "Jovem", 2)};
+    Usuario caio{9, DadosUsuario("Caio", Data(2012, 7, 1), "UEL", "Jovem", 3)};
+    Sessao sessaoDirigente{dirigente};
+    Sessao sessaoCarlos{carlos};
+    Sessao sessaoDora{dora};
+    Sessao sessaoAna{ana};
+    Sessao sessaoBeto{beto};
+    ServicoPresenca presenca;
+    int idDirigente, idCarlos, idDora, idAna, idBeto;
+
+    static void guardar(int idAtividade, int dia, int mes, int idSecao, const string& situacao) {
+        Atividade atividade(idAtividade, DadosAtividade("Reuniao", Data(2026, mes, dia), "08:00", "Sede", "Reuniao", "Escoteiro"),
+                            idSecao, situacao);
+        Repositorio::instance().atividades.push_back(atividade);
+    }
+    static void registrar(int idAtividade, int idJovem, const string& situacao) {
+        Participacao participacao(idJovem, situacao);
+        participacao.attach(idAtividade, time(nullptr));
+        Repositorio::instance().participacoes.push_back(participacao);
+    }
+
+    CenarioHistorico() {
+        Repositorio& r = Repositorio::instance();
+        r.clear();
+        r.usuarios.push_back(dirigente);
+        r.usuarios.push_back(carlos);
+        r.usuarios.push_back(dora);
+        r.usuarios.push_back(ana);
+        r.usuarios.push_back(beto);
+        r.usuarios.push_back(caio);
+        guardar(1, 3, 10, 2, "Realizada");
+        guardar(2, 10, 10, 2, "Realizada");
+        guardar(3, 17, 10, 2, "Realizada");
+        guardar(4, 24, 10, 2, "Realizada");
+        guardar(5, 12, 9, 2, "Realizada");
+        guardar(6, 31, 10, 2, "Cancelada");
+        guardar(7, 5, 10, 3, "Realizada");
+        registrar(1, 7, "Presente");
+        registrar(2, 7, "Atraso");
+        registrar(3, 7, "Ausente");
+        registrar(4, 7, "Presente");
+        registrar(5, 7, "Presente");
+        registrar(6, 7, "Presente");
+        registrar(1, 8, "Presente");
+        registrar(2, 8, "Ausente");
+        registrar(7, 9, "Presente");
+        idDirigente = presenca.add(sessaoDirigente);
+        idCarlos = presenca.add(sessaoCarlos);
+        idDora = presenca.add(sessaoDora);
+        idAna = presenca.add(sessaoAna);
+        idBeto = presenca.add(sessaoBeto);
+    }
+    FiltroHistorico outubro(int idIntegrante = 0, int idSecao = 0) const {
+        return FiltroHistorico(Data(2026, 10, 1), Data(2026, 10, 31), idIntegrante, idSecao);
+    }
+};
+
+// CT-01: Ana (id 7), 3 comparecimentos em 4 atividades de outubro/2026.
+static void testHistCT01Ana() {
+    CenarioHistorico c;
+    Colecao<Participacao> historico = c.presenca.query(c.outubro(), c.idAna);
+    assert(historico.size() == 4 && "CT-01: query traz os 4 registros de outubro");
+    for (Iterador<Participacao> i = historico.iterator(); i.hasNext(); ) {
+        const Participacao& p = i.next();   // avanca o iterador FORA do assert
+        assert(p.memberId() == 7 && "CT-01: so registros da Ana");
+    }
+    double percentual = 0;
+    bool ok = c.presenca.attendancePercentage(c.outubro(), percentual, c.idAna);
+    assert(ok && "CT-01: attendancePercentage retorna true");
+    assert(pertoDe(percentual, 75.0) && "CT-01: 3 comparecimentos (Presente + Atraso) em 4 = 75,0");
+    Colecao<Participacao> explicito = c.presenca.query(c.outubro(7), c.idAna);
+    assert(explicito.size() == 4 && "CT-01: informar o proprio id da Ana traz o mesmo historico");
+}
+
+// CT-02: Ana com idIntegrante = 8 recebe vazio e false, sem revelar dado de outro integrante.
+static void testHistCT02AnaNaoVeOutro() {
+    CenarioHistorico c;
+    double percentual = -1;
+    assert(c.presenca.query(c.outubro(8), c.idAna).size() == 0 && "CT-02: Colecao vazia para outro integrante");
+    bool ok = c.presenca.attendancePercentage(c.outubro(8), percentual, c.idAna);
+    assert(!ok && "CT-02: attendancePercentage retorna false");
+    assert(pertoDe(percentual, -1) && "CT-02: percentual nao e alterado (nada de outro integrante e revelado)");
+}
+
+// Dirigente consulta a secao 2 inteira e recebe os registros e o percentual.
+static void testHistDirigenteSecao() {
+    CenarioHistorico c;
+    Colecao<Participacao> historico = c.presenca.query(c.outubro(0, 2), c.idDirigente);
+    assert(historico.size() == 6 && "Dirigente: secao 2 devolve os 6 registros de outubro (Ana e Beto)");
+    double percentual = 0;
+    bool ok = c.presenca.attendancePercentage(c.outubro(0, 2), percentual, c.idDirigente);
+    assert(ok && "Dirigente: attendancePercentage da secao retorna true");
+    assert(pertoDe(percentual, 400.0 / 6.0) && "Dirigente: percentual da secao 2 inteira (4 de 6)");
+    assert(c.presenca.query(c.outubro(9), c.idDirigente).size() == 1 && "Dirigente: consulta Jovem de qualquer secao");
+}
+
+// Chefe consultando Jovem ou secao de outra secao recebe vazio e false.
+static void testHistChefeOutraSecao() {
+    CenarioHistorico c;
+    double percentual = -1;
+    assert(c.presenca.query(c.outubro(9), c.idCarlos).size() == 0 && "Chefe: Jovem de outra secao, Colecao vazia");
+    bool okJovem = c.presenca.attendancePercentage(c.outubro(9), percentual, c.idCarlos);
+    assert(!okJovem && "Chefe: Jovem de outra secao, percentual false");
+    assert(c.presenca.query(c.outubro(0, 3), c.idCarlos).size() == 0 && "Chefe: outra secao, Colecao vazia");
+    bool okSecao = c.presenca.attendancePercentage(c.outubro(0, 3), percentual, c.idCarlos);
+    assert(!okSecao && "Chefe: outra secao, percentual false");
+    assert(pertoDe(percentual, -1) && "Chefe: o percentual nao e alterado nas recusas");
+    assert(c.presenca.query(c.outubro(0, 2), c.idCarlos).size() == 6 && "Chefe da propria secao: consulta a secao (6 registros)");
+    bool okProprio = c.presenca.attendancePercentage(c.outubro(7), percentual, c.idCarlos);
+    assert(okProprio && "Chefe da propria secao: consulta a Ana, percentual true");
+    assert(pertoDe(percentual, 75.0) && "Chefe da propria secao: percentual da Ana 75,0");
+}
+
+// Alvo que nao e Jovem (Chefe ou Dirigente) e recusado.
+static void testHistAlvoNaoJovem() {
+    CenarioHistorico c;
+    double percentual = -1;
+    assert(c.presenca.query(c.outubro(2), c.idDirigente).size() == 0 && "alvo Chefe: Dirigente recebe Colecao vazia");
+    bool okChefe = c.presenca.attendancePercentage(c.outubro(2), percentual, c.idDirigente);
+    assert(!okChefe && "alvo Chefe: Dirigente recebe false");
+    assert(c.presenca.query(c.outubro(1), c.idDirigente).size() == 0 && "alvo Dirigente: Colecao vazia");
+    bool okDirigente = c.presenca.attendancePercentage(c.outubro(1), percentual, c.idDirigente);
+    assert(!okDirigente && "alvo Dirigente: percentual false");
+    assert(c.presenca.query(c.outubro(2), c.idCarlos).size() == 0 && "alvo Chefe: Chefe recebe Colecao vazia");
+    bool okChefeChefe = c.presenca.attendancePercentage(c.outubro(2), percentual, c.idCarlos);
+    assert(!okChefeChefe && "alvo Chefe: Chefe recebe false");
+}
+
+// Sem registros no periodo: query vazia e percentual false.
+static void testHistSemRegistros() {
+    CenarioHistorico c;
+    double percentual = -1;
+    FiltroHistorico novembro(Data(2026, 11, 1), Data(2026, 11, 30));
+    assert(c.presenca.query(novembro, c.idAna).size() == 0 && "sem registros no periodo: Colecao vazia");
+    bool ok = c.presenca.attendancePercentage(novembro, percentual, c.idAna);
+    assert(!ok && "sem registros no periodo: percentual false");
+    assert(pertoDe(percentual, -1) && "sem registros no periodo: percentual nao e alterado");
+}
+
+// Atividade cancelada nao entra na contagem.
+static void testHistCancelada() {
+    CenarioHistorico c;
+    double percentual = -1;
+    FiltroHistorico dia31(Data(2026, 10, 31), Data(2026, 10, 31));
+    assert(c.presenca.query(dia31, c.idAna).size() == 0 && "atividade cancelada nao entra na consulta");
+    bool ok = c.presenca.attendancePercentage(dia31, percentual, c.idAna);
+    assert(!ok && "atividade cancelada nao entra na contagem (percentual false)");
+    assert(c.presenca.query(c.outubro(), c.idAna).size() == 4 && "atividade cancelada nao altera o historico de outubro");
+}
+
+// Sessao inexistente ou removida recebe colecao vazia e false.
+static void testHistSessaoInexistente() {
+    CenarioHistorico c;
+    double percentual = -1;
+    assert(c.presenca.query(c.outubro(), 999).size() == 0 && "sessao inexistente: Colecao vazia");
+    bool okInexistente = c.presenca.attendancePercentage(c.outubro(), percentual, 999);
+    assert(!okInexistente && "sessao inexistente: percentual false");
+    bool removida = c.presenca.remove(c.idAna);
+    assert(removida && "(preparo) remove de sessao existente retorna true");
+    assert(c.presenca.query(c.outubro(), c.idAna).size() == 0 && "sessao removida: Colecao vazia");
+    bool okRemovida = c.presenca.attendancePercentage(c.outubro(), percentual, c.idAna);
+    assert(!okRemovida && "sessao removida: percentual false");
+    assert(c.presenca.query(c.outubro(0, 2), c.idCarlos).size() == 6 && "remover a sessao da Ana nao afeta as demais (Carlos)");
+}
+
+
 static void executar(const char* nome, void (*teste)()) {
     teste();
     cout << "[OK] " << nome << '\n';
@@ -530,4 +713,13 @@ void runFunctionalTests() {
     executar("Chefe de outra secao", testPresOutraSecao);
     executar("atividade cancelada", testPresCancelada);
     executar("sessao de Jovem", testPresSessaoJovem);
+    cout << "\n=== FUNCIONAIS: Consultar historico de participacao ===\n";
+    executar("CT-01 Ana", testHistCT01Ana);
+    executar("CT-02 Ana nao ve outro integrante", testHistCT02AnaNaoVeOutro);
+    executar("Dirigente consulta a secao", testHistDirigenteSecao);
+    executar("Chefe de outra secao", testHistChefeOutraSecao);
+    executar("alvo que nao e Jovem", testHistAlvoNaoJovem);
+    executar("sem registros no periodo", testHistSemRegistros);
+    executar("atividade cancelada", testHistCancelada);
+    executar("sessao inexistente ou removida", testHistSessaoInexistente);
 }
