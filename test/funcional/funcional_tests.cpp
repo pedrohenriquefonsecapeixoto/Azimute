@@ -9,18 +9,9 @@
 #include <ctime>
 #include <vector>
 #include "../../include/Colecao.h"
-
+#undef NDEBUG
+#include <cassert>
 using namespace std;
-
-// ---------- Cadastrar usuários ----------
-
-static int falhas = 0;
-
-static void verify(bool condicao, const string& descricao) {
-    if (!condicao) 
-        ++falhas;
-    cout << (condicao ? "[OK] " : "[FALHA] ") << descricao << '\n';
-}
 
 static bool igual(const Usuario& a, const Usuario& b) {
     return a.id() == b.id() && a.details().name() == b.details().name()
@@ -39,12 +30,17 @@ static void testCT01CadastroValido() {
     DadosUsuario dados("Ana Souza", Data(2012, 5, 20), "UEL", "Jovem", 2);
     Usuario nova;
     bool ok = usuarios.registrar(dados, nova, idDirigenteUsuarios);
-    verify(ok && nova.id() >= 100 && nova.role() == "Jovem" && nova.sectionId() == 2,
-        "CT-01: cadastro retorna true, id novo, papel Jovem e secao 2");
+    assert(ok && "CT-01: registrar deve retornar true");
+    assert(nova.id() >= 100 && "CT-01: usuario recebe id novo (Repositorio gera ids a partir de 100)");
+    assert(nova.role() == "Jovem" && "CT-01: papel Jovem");
+    assert(nova.sectionId() == 2 && "CT-01: secao 2");
+    assert(repositorio.usuarios.size() == 1 && "CT-01: exatamente um usuario foi gravado");
     const Usuario* salvo = repositorio.findUser(nova.id());
-    verify(salvo && igual(nova, *salvo) && nova.details().name() == "Ana Souza"
-        && nova.details().birth() == Data(2012, 5, 20) && nova.details().bond() == "UEL"
-        && repositorio.usuarios.size() == 1, "CT-01: usuario completo foi armazenado");
+    assert(salvo != nullptr && "CT-01: o usuario gravado e encontrado pelo id devolvido");
+    assert(igual(nova, *salvo) && "CT-01: o usuario de saida e identico ao gravado");
+    assert(salvo->details().name() == "Ana Souza" && "CT-01: nome gravado");
+    assert(salvo->details().birth() == Data(2012, 5, 20) && "CT-01: nascimento gravado");
+    assert(salvo->details().bond() == "UEL" && "CT-01: vinculo gravado");
 }
 
 // Cadastrar usuario, CT-02: mesmo nome e mesma data de nascimento.
@@ -58,14 +54,53 @@ static void testCT02CadastroDuplicado() {
     DadosUsuario dados("Ana Souza", Data(2012, 5, 20), "UEL", "Jovem", 2);
     Usuario cadastrada;
     bool preparado = usuarios.registrar(dados, cadastrada, idDirigenteUsuarios);
+    assert(preparado && "CT-02 (preparo): o primeiro cadastro da Ana deve funcionar");
     Usuario original(77, DadosUsuario("Usuario anterior", Data(1990, 3, 10), "Outro vinculo", "Chefe Escotista", 3));
     Usuario nova = original;
     bool ok = usuarios.registrar(dados, nova, idDirigenteUsuarios);
-    verify(preparado && !ok, "CT-02: cadastro duplicado retorna false");
-    verify(preparado && repositorio.usuarios.size() == 1 && igual(repositorio.usuarios[0], cadastrada)
-        && igual(nova, original), "CT-02: nenhum novo usuario e criado; cadastro existente e toda a saida permanecem iguais");
+    assert(!ok && "CT-02: registrar com mesmo nome e nascimento deve retornar false");
+    assert(repositorio.usuarios.size() == 1 && "CT-02: nenhum usuario novo e criado");
+    assert(igual(repositorio.usuarios[0], cadastrada) && "CT-02: o cadastro existente nao muda");
+    assert(igual(nova, original) && "CT-02: o usuario de saida nao muda");
 }
 
+// Cadastrar usuario, alternativa: campos invalidos impedem a criacao.
+static void testCadastroCamposInvalidos() {
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.clear();
+    Usuario dirigente(1, DadosUsuario("Dirigente", Data(1980, 1, 1), "UEL", "Dirigente da UEL", 0));
+    Sessao sessaoDirigente(dirigente);
+    ServicoUsuarios usuarios;
+    int idDirigenteUsuarios = usuarios.add(sessaoDirigente);
+    const DadosUsuario invalidos[] = {
+        DadosUsuario("", Data(2012, 5, 20), "UEL", "Jovem", 2),            // nome vazio
+        DadosUsuario("Ana Souza", Data(2012, 2, 30), "UEL", "Jovem", 2),   // nascimento inexistente
+        DadosUsuario("Ana Souza", Data(2012, 5, 20), "", "Jovem", 2),      // vinculo vazio
+        DadosUsuario("Ana Souza", Data(2012, 5, 20), "UEL", "Visitante", 2) // papel nao permitido
+    };
+    for (const DadosUsuario& dados : invalidos) {
+        Usuario nova;
+        bool ok = usuarios.registrar(dados, nova, idDirigenteUsuarios);
+        assert(!ok && "campo invalido (nome, nascimento, vinculo ou papel): registrar retorna false");
+        assert(repositorio.usuarios.empty() && "campo invalido: nenhum usuario e criado");
+    }
+}
+
+// Cadastrar usuario, passo 3: so o Dirigente cadastra.
+static void testCadastroSessaoNaoDirigente() {
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.clear();
+    Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
+    Sessao sessaoChefe(chefe);
+    ServicoUsuarios usuarios;
+    int idChefe = usuarios.add(sessaoChefe);
+    Usuario nova;
+    bool ok = usuarios.registrar(DadosUsuario("Ana Souza", Data(2012, 5, 20), "UEL", "Jovem", 2), nova, idChefe);
+    assert(!ok && "sessao de Chefe: registrar retorna false");
+    bool semSessao = usuarios.registrar(DadosUsuario("Ana Souza", Data(2012, 5, 20), "UEL", "Jovem", 2), nova, 999);
+    assert(!semSessao && "sessao inexistente: registrar retorna false");
+    assert(repositorio.usuarios.empty() && "sem Dirigente em sessao: nenhum usuario e criado");
+}
 
 // ---------- Cadastrar atividade/evento ----------
 
@@ -97,14 +132,19 @@ static void testAtvCT01CadastroValido() {
     DadosAtividade dados("Acampamento de Primavera", Data(2026, 11, 15), "08:30", "Sede", "Acampamento", "Escoteiro");
     Atividade nova;
     bool ok = atividades.registrar(dados, nova, idChefe);
-    verify(ok && nova.id() >= 100 && nova.status() == "Confirmada" && nova.sectionId() == 2,
-        "CT-01: cadastro retorna true, id proprio, situacao Confirmada e secao 2");
-    const Atividade* salva = Repositorio::instance().atividades.empty() ? nullptr : &Repositorio::instance().atividades[0];
-    verify(salva && igualAtv(nova, *salva) && Repositorio::instance().atividades.size() == 1
-        && nova.details().title() == "Acampamento de Primavera" && nova.details().startTime() == "08:30",
-        "CT-01: atividade completa foi armazenada");
-    verify(nova.members().size() == 2 && nova.members()[0] == 10 && nova.members()[1] == 11,
-        "CT-01: Jovens da secao do Chefe inscritos, sem pedido ao Dirigente");
+    assert(ok && "CT-01: registrar deve retornar true");
+    assert(nova.id() >= 100 && "CT-01: atividade recebe id proprio");
+    assert(nova.status() == "Confirmada" && "CT-01: situacao Confirmada, sem pedido ao Dirigente");
+    assert(nova.sectionId() == 2 && "CT-01: secao do Chefe");
+    Repositorio& repositorio = Repositorio::instance();
+    assert(repositorio.atividades.size() == 1 && "CT-01: exatamente uma atividade foi gravada");
+    const Atividade* salva = repositorio.findActivity(nova.id());
+    assert(salva != nullptr && "CT-01: a atividade gravada e encontrada pelo id devolvido");
+    assert(igualAtv(nova, *salva) && "CT-01: a atividade de saida e identica a gravada");
+    assert(salva->details().title() == "Acampamento de Primavera" && "CT-01: titulo gravado");
+    assert(salva->details().startTime() == "08:30" && "CT-01: horario gravado");
+    assert(nova.members().size() == 2 && "CT-01: so os 2 Jovens da secao do Chefe sao inscritos");
+    assert(nova.members()[0] == 10 && nova.members()[1] == 11 && "CT-01: inscritos 10 e 11 (o Jovem 12 e de outra secao)");
 }
 
 // Cadastrar atividade, CT-02: campo obrigatorio vazio (sem titulo).
@@ -118,9 +158,9 @@ static void testAtvCT02SemTitulo() {
     Atividade original(77, DadosAtividade("Anterior", Data(2026, 1, 1), "10:00", "Outro", "Reuniao", "Lobinho"), 3, "Realizada");
     Atividade nova = original;
     bool ok = atividades.registrar(dados, nova, idChefe);
-    verify(!ok, "CT-02: cadastro sem titulo retorna false");
-    verify(Repositorio::instance().atividades.empty() && igualAtv(nova, original),
-        "CT-02: nenhuma atividade e criada e a saida permanece igual");
+    assert(!ok && "CT-02: registrar sem titulo deve retornar false");
+    assert(Repositorio::instance().atividades.empty() && "CT-02: nenhuma atividade e criada");
+    assert(igualAtv(nova, original) && "CT-02: a atividade de saida nao muda");
 }
 
 // Cadastrar atividade: horario invalido.
@@ -134,8 +174,9 @@ static void testAtvHorarioInvalido() {
     for (const string& horario : horarios) {
         DadosAtividade dados("Reuniao", Data(2026, 11, 15), horario, "Sede", "Reuniao", "Escoteiro");
         Atividade nova;
-        verify(!atividades.registrar(dados, nova, idChefe) && Repositorio::instance().atividades.empty(),
-            "horario invalido \"" + horario + "\" retorna false e nao cria atividade");
+        bool ok = atividades.registrar(dados, nova, idChefe);
+        assert(!ok && "horario fora do formato HH:MM (25:00 ou 8:00): registrar retorna false");
+        assert(Repositorio::instance().atividades.empty() && "horario invalido: nenhuma atividade e criada");
     }
 }
 
@@ -149,8 +190,9 @@ static void testAtvSessaoNaoChefe() {
     int idJovem = atividades.add(sessaoJovem);
     DadosAtividade dados("Reuniao", Data(2026, 11, 15), "08:30", "Sede", "Reuniao", "Escoteiro");
     Atividade nova;
-    verify(!atividades.registrar(dados, nova, idJovem) && Repositorio::instance().atividades.empty(),
-        "sessao de Jovem retorna false e nao cria atividade");
+    bool ok = atividades.registrar(dados, nova, idJovem);
+    assert(!ok && "sessao de Jovem: registrar retorna false");
+    assert(Repositorio::instance().atividades.empty() && "sessao de Jovem: nenhuma atividade e criada");
 }
 
 class RegraSemAcampamento : public Regra<DadosAtividade> {
@@ -171,14 +213,18 @@ static void testAtvRegraDoCliente() {
     atividades.add(regra);
     Atividade nova;
     DadosAtividade recusada("Acampamento", Data(2026, 11, 15), "08:30", "Sede", "Acampamento", "Escoteiro");
-    verify(!atividades.registrar(recusada, nova, idChefe) && Repositorio::instance().atividades.empty(),
-        "regra do cliente que recusa o tipo impede o cadastro");
+    bool okRecusada = atividades.registrar(recusada, nova, idChefe);
+    assert(!okRecusada && "regra do cliente que recusa o tipo: registrar retorna false");
+    assert(Repositorio::instance().atividades.empty() && "regra do cliente: nenhuma atividade e criada");
     DadosAtividade aceita("Reuniao", Data(2026, 11, 15), "08:30", "Sede", "Reuniao", "Escoteiro");
-    verify(atividades.registrar(aceita, nova, idChefe) && Repositorio::instance().atividades.size() == 1,
-        "tipo aceito pela regra do cliente e cadastrado");
+    bool okAceita = atividades.registrar(aceita, nova, idChefe);
+    assert(okAceita && "tipo aceito pela regra do cliente: registrar retorna true");
+    assert(Repositorio::instance().atividades.size() == 1 && "tipo aceito: a atividade e gravada");
 }
 
+
 // ---------- Consultar atividade/evento ----------
+
 struct CenarioConsulta {
     Usuario chefe{2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)};
     Sessao sessaoChefe{chefe};
@@ -188,9 +234,9 @@ struct CenarioConsulta {
     ~CenarioConsulta() { Repositorio::instance().clear(); }
 };
 
-// Fonte: Projeto da API Sprint 2 (1)(1), p. 12, Consultar atividade/evento.
+
 // CT-01: tres atividades em outubro/2026 na secao do Chefe; uma Confirmada.
-void testConsultaCT01FiltrarEVisualizarDetalhes() {
+static void testConsultaCT01FiltrarEVisualizarDetalhes() {
     CenarioConsulta cenario;
     DadosAtividade dados("Acampamento de Outubro", Data(2026, 10, 3), "08:00",
         "Parque Estadual", "Acampamento", "Escoteiro", "Acampamento da secao 2");
@@ -204,43 +250,56 @@ void testConsultaCT01FiltrarEVisualizarDetalhes() {
 
     FiltroAtividade filtro(Data(2026, 10, 1), Data(2026, 10, 31), "Confirmada");
     Colecao<Atividade> lista = cenario.atividades.query(filtro, cenario.idChefe);
-    verify(lista.size() == 1, "CT-01: apenas a atividade Confirmada e retornada");
+    assert(lista.size() == 1 && "CT-01: a Colecao tem tamanho 1 (so a Confirmada)");
     Iterador<Atividade> it = lista.iterator();
-    verify(it.hasNext(), "CT-01: o Chefe pode iniciar a leitura pelo iterador");
-    if (it.hasNext()) {
-        const Atividade& a = it.next();
-        verify(a.id() == 10 && a.sectionId() == 2 && a.status() == "Confirmada"
-            && a.details().title() == dados.title() && a.details().date() == dados.date()
-            && a.details().startTime() == dados.startTime() && a.details().place() == dados.place()
-            && a.details().type() == dados.type() && a.details().branch() == dados.branch()
-            && a.details().description() == dados.description()
-            && a.members().size() == 1 && a.members()[0] == 7,
-            "CT-01: iterador entrega a atividade correta com todos os detalhes");
-    }
-    verify(!it.hasNext(), "CT-01: nenhuma atividade Cancelada ou Realizada aparece na lista");
-    verify(repositorio.atividades.size() == 3, "CT-01: consulta nao remove atividades cadastradas");
+    assert(it.hasNext() && "CT-01: o iterador tem a atividade");
+    const Atividade& a = it.next();   // avanca o iterador FORA do assert
+    assert(a.id() == 10 && "CT-01: e a atividade Confirmada (id 10)");
+    assert(a.sectionId() == 2 && a.status() == "Confirmada" && "CT-01: secao 2 e situacao Confirmada");
+    assert(a.details().title() == dados.title() && "CT-01: titulo");
+    assert(a.details().date() == dados.date() && a.details().startTime() == dados.startTime() && "CT-01: data e horario");
+    assert(a.details().place() == dados.place() && "CT-01: local");
+    assert(a.details().type() == dados.type() && a.details().branch() == dados.branch() && "CT-01: tipo e ramo");
+    assert(a.details().description() == dados.description() && "CT-01: descricao");
+    assert(a.members().size() == 1 && a.members()[0] == 7 && "CT-01: integrante inscrito");
+    assert(!it.hasNext() && "CT-01: Cancelada e Realizada nao aparecem na lista");
+    assert(repositorio.atividades.size() == 3 && "CT-01: a consulta nao remove atividades cadastradas");
 }
 
 // CT-02, primeira alternativa: nenhuma atividade no periodo pedido.
-void testConsultaCT02SemAtividadesNoPeriodo() {
+static void testConsultaCT02SemAtividadesNoPeriodo() {
     CenarioConsulta cenario;
     Repositorio::instance().atividades.push_back(Atividade(10,
         DadosAtividade("Reuniao", Data(2026, 9, 30), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada"));
     Colecao<Atividade> lista = cenario.atividades.query(
         FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31)), cenario.idChefe);
-    verify(lista.size() == 0 && !lista.iterator().hasNext(),
-        "CT-02a: periodo sem atividades retorna colecao vazia, sem erro");
+    assert(lista.size() == 0 && "CT-02a: periodo sem atividades devolve Colecao vazia (tamanho 0)");
+    assert(!lista.iterator().hasNext() && "CT-02a: o iterador nao tem itens");
 }
 
 // CT-02, segunda alternativa: so existem atividades de outra secao.
-void testConsultaCT02AtividadesDeOutraSecao() {
+static void testConsultaCT02AtividadesDeOutraSecao() {
     CenarioConsulta cenario;
     Repositorio::instance().atividades.push_back(Atividade(10,
         DadosAtividade("Reuniao da secao 3", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 3, "Confirmada"));
     Colecao<Atividade> lista = cenario.atividades.query(
         FiltroAtividade(Data(2026, 10, 1), Data(2026, 10, 31)), cenario.idChefe);
-    verify(lista.size() == 0 && !lista.iterator().hasNext(),
-        "CT-02b: atividades de outra secao nao sao exibidas ao Chefe");
+    assert(lista.size() == 0 && "CT-02b: atividades de outra secao nao sao mostradas ao Chefe");
+    assert(!lista.iterator().hasNext() && "CT-02b: o iterador nao tem itens");
+}
+
+// Consultar atividade: so o Chefe consulta.
+static void testConsultaSessaoNaoChefe() {
+    CenarioConsulta cenario;
+    Repositorio::instance().atividades.push_back(Atividade(10,
+        DadosAtividade("Reuniao", Data(2026, 10, 3), "08:00", "Sede", "Reuniao", "Escoteiro"), 2, "Confirmada"));
+    Usuario jovem(7, DadosUsuario("Ana", Data(2012, 5, 20), "UEL", "Jovem", 2));
+    Sessao sessaoJovem(jovem);
+    int idJovem = cenario.atividades.add(sessaoJovem);
+    FiltroAtividade outubro(Data(2026, 10, 1), Data(2026, 10, 31));
+    assert(cenario.atividades.query(outubro, idJovem).size() == 0 && "sessao de Jovem: Colecao vazia");
+    assert(cenario.atividades.query(outubro, 999).size() == 0 && "sessao inexistente: Colecao vazia");
+    assert(cenario.atividades.query(outubro, cenario.idChefe).size() == 1 && "controle: o Chefe da secao ve a atividade");
 }
 
 // ---------- Registrar presenca, ausencia ou atraso ----------
@@ -260,23 +319,23 @@ static void testPresCT01RegistroValido() {
     Sessao sessaoChefe(chefe);
     ServicoPresenca presenca;
     int idChefe = presenca.add(sessaoChefe);
-
     Colecao<Usuario> integrantes = presenca.listMembers(12, idChefe);
-    verify(integrantes.size() == 2 && integrantes.at(0).id() == 7 && integrantes.at(1).id() == 8,
-        "CT-01: listMembers apresenta os integrantes 7 e 8");
+    assert(integrantes.size() == 2 && "CT-01: listMembers apresenta 2 integrantes");
+    assert(integrantes.at(0).id() == 7 && integrantes.at(1).id() == 8 && "CT-01: integrantes 7 e 8");
     Colecao<Participacao> lista;
     lista.add(Participacao(7, "Presente"));
     lista.add(Participacao(8, "Atraso"));
     bool gravou = presenca.record(12, lista, idChefe);
     const vector<Participacao>& v = r.participacoes;
-    verify(gravou && v.size() == 2, "CT-01: record retorna true e grava as duas participacoes");
-    verify(v.size() == 2 && v[0].memberId() == 7 && v[0].status() == "Presente"
-        && v[1].memberId() == 8 && v[1].status() == "Atraso"
-        && v[0].activityId() == 12 && v[1].activityId() == 12,
-        "CT-01: 7 Presente e 8 Atraso gravados na atividade 12");
+    assert(gravou && "CT-01: record deve retornar true");
+    assert(v.size() == 2 && "CT-01: as duas participacoes foram gravadas");
+    assert(v[0].memberId() == 7 && v[0].status() == "Presente" && "CT-01: integrante 7 Presente");
+    assert(v[1].memberId() == 8 && v[1].status() == "Atraso" && "CT-01: integrante 8 Atraso");
+    assert(v[0].activityId() == 12 && v[1].activityId() == 12 && "CT-01: participacoes vinculadas a atividade 12");
     int minutos = -1;
-    verify(presenca.recordingTime(12, minutos, idChefe) && minutos >= 0,
-        "CT-01: recordingTime retorna true com os minutos desde o fim da atividade");
+    bool medido = presenca.recordingTime(12, minutos, idChefe);
+    assert(medido && "CT-01: recordingTime deve retornar true");
+    assert(minutos >= 0 && "CT-01: minutos desde o fim da atividade (nunca negativo)");
 }
 
 // CT-02: integrante 8 ja tem situacao registrada na atividade 12.
@@ -294,18 +353,20 @@ static void testPresCT02Duplicado() {
     Sessao sessaoChefe(chefe);
     ServicoPresenca presenca;
     int idChefe = presenca.add(sessaoChefe);
-
     Colecao<Participacao> lista;
     lista.add(Participacao(7, "Presente"));
     lista.add(Participacao(8, "Atraso"));
-    presenca.record(12, lista, idChefe);
+    bool preparado = presenca.record(12, lista, idChefe);
+    assert(preparado && "CT-02 (preparo): o primeiro registro deve funcionar");
     bool dup = presenca.record(12, Participacao(8, "Ausente"), idChefe);
-    verify(!dup, "CT-02: registrar de novo o integrante 8 retorna false");
+    assert(!dup && "CT-02: registrar de novo o integrante 8 deve retornar false");
     const vector<Participacao>& v = r.participacoes;
+    assert(v.size() == 2 && "CT-02: nenhuma participacao nova e gravada");
     bool mantida = false;
     for (size_t i = 0; i < v.size(); ++i)
-        if (v[i].memberId() == 8 && v[i].activityId() == 12) mantida = (v[i].status() == "Atraso");
-    verify(v.size() == 2 && mantida, "CT-02: a situacao anterior do integrante 8 permanece");
+        if (v[i].memberId() == 8 && v[i].activityId() == 12) 
+            mantida = (v[i].status() == "Atraso");
+    assert(mantida && "CT-02: a situacao anterior do integrante 8 (Atraso) permanece");
 }
 
 // Atividade que ainda nao terminou.
@@ -323,14 +384,16 @@ static void testPresAtividadeEmAndamento() {
     Sessao sessaoChefe(chefe);
     ServicoPresenca presenca;
     int idChefe = presenca.add(sessaoChefe);
-
     Colecao<Participacao> lista;
     lista.add(Participacao(7, "Presente"));
     lista.add(Participacao(8, "Presente"));
-    verify(!presenca.record(13, lista, idChefe) && r.participacoes.empty(),
-        "atividade em andamento: record retorna false e nada e gravado");
+    bool gravou = presenca.record(13, lista, idChefe);
+    assert(!gravou && "atividade em andamento: record retorna false");
+    assert(r.participacoes.empty() && "atividade em andamento: nada e gravado");
     int minutos = -1;
-    verify(!presenca.recordingTime(13, minutos, idChefe), "atividade em andamento: recordingTime retorna false");
+    bool medido = presenca.recordingTime(13, minutos, idChefe);
+    assert(!medido && "atividade em andamento: recordingTime retorna false");
+    assert(minutos == -1 && "atividade em andamento: minutos nao e alterado");
 }
 
 // Lote invalido (tudo ou nada).
@@ -349,17 +412,18 @@ static void testPresLoteInvalido() {
     Sessao sessaoChefe(chefe);
     ServicoPresenca presenca;
     int idChefe = presenca.add(sessaoChefe);
-
     Colecao<Participacao> lote;
     lote.add(Participacao(7, "Presente"));
     lote.add(Participacao(8, "Faltou"));
-    verify(!presenca.record(12, lote, idChefe) && r.participacoes.empty(),
-        "lote invalido: nenhum item e gravado");
+    bool okSituacao = presenca.record(12, lote, idChefe);
+    assert(!okSituacao && "lote com situacao invalida (Faltou): record retorna false");
+    assert(r.participacoes.empty() && "lote com situacao invalida: nenhum item e gravado (tudo ou nada)");
     Colecao<Participacao> comNaoInscrito;
     comNaoInscrito.add(Participacao(7, "Presente"));
     comNaoInscrito.add(Participacao(9, "Presente"));
-    verify(!presenca.record(12, comNaoInscrito, idChefe) && r.participacoes.empty(),
-        "lote com integrante nao inscrito: nenhum item e gravado");
+    bool okInscrito = presenca.record(12, comNaoInscrito, idChefe);
+    assert(!okInscrito && "lote com integrante nao inscrito: record retorna false");
+    assert(r.participacoes.empty() && "lote com integrante nao inscrito: nenhum item e gravado");
 }
 
 // Chefe de outra secao.
@@ -380,16 +444,19 @@ static void testPresOutraSecao() {
     ServicoPresenca presenca;
     int idChefe = presenca.add(sessaoChefe);
     int idOutro = presenca.add(sessaoOutro);
-
     Colecao<Participacao> lista;
     lista.add(Participacao(7, "Presente"));
     lista.add(Participacao(8, "Presente"));
-    verify(presenca.listMembers(12, idOutro).size() == 0, "outra secao: listMembers vazio");
-    verify(!presenca.record(12, lista, idOutro) && r.participacoes.empty(),
-        "outra secao: record retorna false e nada e gravado");
-    presenca.record(12, lista, idChefe);
+    assert(presenca.listMembers(12, idOutro).size() == 0 && "outra secao: listMembers vazio");
+    bool okOutro = presenca.record(12, lista, idOutro);
+    assert(!okOutro && "outra secao: record retorna false");
+    assert(r.participacoes.empty() && "outra secao: nada e gravado");
+    bool okChefe = presenca.record(12, lista, idChefe);
+    assert(okChefe && "controle: o Chefe da secao consegue registrar a mesma lista");
     int minutos = -1;
-    verify(!presenca.recordingTime(12, minutos, idOutro), "outra secao: recordingTime retorna false");
+    bool medido = presenca.recordingTime(12, minutos, idOutro);
+    assert(!medido && "outra secao: recordingTime retorna false mesmo com registros");
+    assert(minutos == -1 && "outra secao: minutos nao e alterado");
 }
 
 // Atividade cancelada.
@@ -407,12 +474,12 @@ static void testPresCancelada() {
     Sessao sessaoChefe(chefe);
     ServicoPresenca presenca;
     int idChefe = presenca.add(sessaoChefe);
-
     Colecao<Participacao> lista;
     lista.add(Participacao(7, "Presente"));
     lista.add(Participacao(8, "Presente"));
-    verify(!presenca.record(14, lista, idChefe) && r.participacoes.empty(),
-        "atividade cancelada: record retorna false");
+    bool gravou = presenca.record(14, lista, idChefe);
+    assert(!gravou && "atividade cancelada: record retorna false");
+    assert(r.participacoes.empty() && "atividade cancelada: nada e gravado");
 }
 
 // Sessao de Jovem.
@@ -427,13 +494,13 @@ static void testPresSessaoJovem() {
     Sessao sessaoJovem(jovem);
     ServicoPresenca presenca;
     int idJovem = presenca.add(sessaoJovem);
-
-    verify(presenca.listMembers(12, idJovem).size() == 0
-        && !presenca.record(12, Participacao(7, "Presente"), idJovem) && r.participacoes.empty(),
-        "sessao de Jovem: listMembers vazio e record retorna false");
+    assert(presenca.listMembers(12, idJovem).size() == 0 && "sessao de Jovem: listMembers vazio");
+    bool gravou = presenca.record(12, Participacao(7, "Presente"), idJovem);
+    assert(!gravou && "sessao de Jovem: record retorna false");
+    assert(r.participacoes.empty() && "sessao de Jovem: nada e gravado");
 }
 
-// ---------- Consultar histórico de participação ----------
+// ---------- Consultar historico de participacao ----------
 
 static bool pertoDe(double a, double b) {
     double d = a - b;
@@ -511,65 +578,71 @@ struct CenarioHistorico {
 static void testHistCT01Ana() {
     CenarioHistorico c;
     Colecao<Participacao> historico = c.presenca.query(c.outubro(), c.idAna);
-    bool todosDaAna = true;
-    for (Iterador<Participacao> i = historico.iterator(); i.hasNext(); )
-        if (i.next().memberId() != 7) todosDaAna = false;
-    verify(historico.size() == 4 && todosDaAna, "CT-01: query traz so os 4 registros da Ana em outubro");
+    assert(historico.size() == 4 && "CT-01: query traz os 4 registros de outubro");
+    for (Iterador<Participacao> i = historico.iterator(); i.hasNext(); ) {
+        const Participacao& p = i.next();   // avanca o iterador FORA do assert
+        assert(p.memberId() == 7 && "CT-01: so registros da Ana");
+    }
     double percentual = 0;
-    verify(c.presenca.attendancePercentage(c.outubro(), percentual, c.idAna) && pertoDe(percentual, 75.0),
-        "CT-01: attendancePercentage retorna true com 75,0");
+    bool ok = c.presenca.attendancePercentage(c.outubro(), percentual, c.idAna);
+    assert(ok && "CT-01: attendancePercentage retorna true");
+    assert(pertoDe(percentual, 75.0) && "CT-01: 3 comparecimentos (Presente + Atraso) em 4 = 75,0");
     Colecao<Participacao> explicito = c.presenca.query(c.outubro(7), c.idAna);
-    verify(explicito.size() == 4, "CT-01: informar o proprio id da Ana traz o mesmo historico");
+    assert(explicito.size() == 4 && "CT-01: informar o proprio id da Ana traz o mesmo historico");
 }
 
 // CT-02: Ana com idIntegrante = 8 recebe vazio e false, sem revelar dado de outro integrante.
 static void testHistCT02AnaNaoVeOutro() {
     CenarioHistorico c;
     double percentual = -1;
-    verify(c.presenca.query(c.outubro(8), c.idAna).size() == 0
-        && !c.presenca.attendancePercentage(c.outubro(8), percentual, c.idAna) && pertoDe(percentual, -1),
-        "CT-02: Ana com idIntegrante = 8 recebe vazio e false");
+    assert(c.presenca.query(c.outubro(8), c.idAna).size() == 0 && "CT-02: Colecao vazia para outro integrante");
+    bool ok = c.presenca.attendancePercentage(c.outubro(8), percentual, c.idAna);
+    assert(!ok && "CT-02: attendancePercentage retorna false");
+    assert(pertoDe(percentual, -1) && "CT-02: percentual nao e alterado (nada de outro integrante e revelado)");
 }
 
 // Dirigente consulta a secao 2 inteira e recebe os registros e o percentual.
 static void testHistDirigenteSecao() {
     CenarioHistorico c;
     Colecao<Participacao> historico = c.presenca.query(c.outubro(0, 2), c.idDirigente);
+    assert(historico.size() == 6 && "Dirigente: secao 2 devolve os 6 registros de outubro (Ana e Beto)");
     double percentual = 0;
-    verify(historico.size() == 6, "Dirigente: secao 2 devolve os 6 registros de outubro (Ana e Beto)");
-    verify(c.presenca.attendancePercentage(c.outubro(0, 2), percentual, c.idDirigente)
-        && pertoDe(percentual, 400.0 / 6.0), "Dirigente: percentual da secao 2 inteira (4 de 6)");
-    verify(c.presenca.query(c.outubro(9), c.idDirigente).size() == 1, "Dirigente: consulta Jovem de qualquer secao");
+    bool ok = c.presenca.attendancePercentage(c.outubro(0, 2), percentual, c.idDirigente);
+    assert(ok && "Dirigente: attendancePercentage da secao retorna true");
+    assert(pertoDe(percentual, 400.0 / 6.0) && "Dirigente: percentual da secao 2 inteira (4 de 6)");
+    assert(c.presenca.query(c.outubro(9), c.idDirigente).size() == 1 && "Dirigente: consulta Jovem de qualquer secao");
 }
 
 // Chefe consultando Jovem ou secao de outra secao recebe vazio e false.
 static void testHistChefeOutraSecao() {
     CenarioHistorico c;
     double percentual = -1;
-    verify(c.presenca.query(c.outubro(9), c.idCarlos).size() == 0
-        && !c.presenca.attendancePercentage(c.outubro(9), percentual, c.idCarlos),
-        "Chefe de outra secao: consulta a Jovem recebe vazio e false");
-    verify(c.presenca.query(c.outubro(0, 3), c.idCarlos).size() == 0
-        && !c.presenca.attendancePercentage(c.outubro(0, 3), percentual, c.idCarlos),
-        "Chefe de outra secao: consulta a secao recebe vazio e false");
-    verify(c.presenca.query(c.outubro(0, 2), c.idCarlos).size() == 6
-        && c.presenca.attendancePercentage(c.outubro(7), percentual, c.idCarlos) && pertoDe(percentual, 75.0),
-        "Chefe da propria secao: consulta a secao e o Jovem normalmente");
+    assert(c.presenca.query(c.outubro(9), c.idCarlos).size() == 0 && "Chefe: Jovem de outra secao, Colecao vazia");
+    bool okJovem = c.presenca.attendancePercentage(c.outubro(9), percentual, c.idCarlos);
+    assert(!okJovem && "Chefe: Jovem de outra secao, percentual false");
+    assert(c.presenca.query(c.outubro(0, 3), c.idCarlos).size() == 0 && "Chefe: outra secao, Colecao vazia");
+    bool okSecao = c.presenca.attendancePercentage(c.outubro(0, 3), percentual, c.idCarlos);
+    assert(!okSecao && "Chefe: outra secao, percentual false");
+    assert(pertoDe(percentual, -1) && "Chefe: o percentual nao e alterado nas recusas");
+    assert(c.presenca.query(c.outubro(0, 2), c.idCarlos).size() == 6 && "Chefe da propria secao: consulta a secao (6 registros)");
+    bool okProprio = c.presenca.attendancePercentage(c.outubro(7), percentual, c.idCarlos);
+    assert(okProprio && "Chefe da propria secao: consulta a Ana, percentual true");
+    assert(pertoDe(percentual, 75.0) && "Chefe da propria secao: percentual da Ana 75,0");
 }
 
 // Alvo que nao e Jovem (Chefe ou Dirigente) e recusado.
 static void testHistAlvoNaoJovem() {
     CenarioHistorico c;
     double percentual = -1;
-    verify(c.presenca.query(c.outubro(2), c.idDirigente).size() == 0
-        && !c.presenca.attendancePercentage(c.outubro(2), percentual, c.idDirigente),
-        "alvo Chefe: Dirigente e recusado");
-    verify(c.presenca.query(c.outubro(1), c.idDirigente).size() == 0
-        && !c.presenca.attendancePercentage(c.outubro(1), percentual, c.idDirigente),
-        "alvo Dirigente: Dirigente e recusado");
-    verify(c.presenca.query(c.outubro(2), c.idCarlos).size() == 0
-        && !c.presenca.attendancePercentage(c.outubro(2), percentual, c.idCarlos),
-        "alvo Chefe: Chefe e recusado");
+    assert(c.presenca.query(c.outubro(2), c.idDirigente).size() == 0 && "alvo Chefe: Dirigente recebe Colecao vazia");
+    bool okChefe = c.presenca.attendancePercentage(c.outubro(2), percentual, c.idDirigente);
+    assert(!okChefe && "alvo Chefe: Dirigente recebe false");
+    assert(c.presenca.query(c.outubro(1), c.idDirigente).size() == 0 && "alvo Dirigente: Colecao vazia");
+    bool okDirigente = c.presenca.attendancePercentage(c.outubro(1), percentual, c.idDirigente);
+    assert(!okDirigente && "alvo Dirigente: percentual false");
+    assert(c.presenca.query(c.outubro(2), c.idCarlos).size() == 0 && "alvo Chefe: Chefe recebe Colecao vazia");
+    bool okChefeChefe = c.presenca.attendancePercentage(c.outubro(2), percentual, c.idCarlos);
+    assert(!okChefeChefe && "alvo Chefe: Chefe recebe false");
 }
 
 // Sem registros no periodo: query vazia e percentual false.
@@ -577,9 +650,10 @@ static void testHistSemRegistros() {
     CenarioHistorico c;
     double percentual = -1;
     FiltroHistorico novembro(Data(2026, 11, 1), Data(2026, 11, 30));
-    verify(c.presenca.query(novembro, c.idAna).size() == 0
-        && !c.presenca.attendancePercentage(novembro, percentual, c.idAna) && pertoDe(percentual, -1),
-        "sem registros no periodo: query vazia e percentual false");
+    assert(c.presenca.query(novembro, c.idAna).size() == 0 && "sem registros no periodo: Colecao vazia");
+    bool ok = c.presenca.attendancePercentage(novembro, percentual, c.idAna);
+    assert(!ok && "sem registros no periodo: percentual false");
+    assert(pertoDe(percentual, -1) && "sem registros no periodo: percentual nao e alterado");
 }
 
 // Atividade cancelada nao entra na contagem.
@@ -587,23 +661,25 @@ static void testHistCancelada() {
     CenarioHistorico c;
     double percentual = -1;
     FiltroHistorico dia31(Data(2026, 10, 31), Data(2026, 10, 31));
-    verify(c.presenca.query(dia31, c.idAna).size() == 0
-        && !c.presenca.attendancePercentage(dia31, percentual, c.idAna),
-        "atividade cancelada nao entra na consulta nem na contagem");
-    verify(c.presenca.query(c.outubro(), c.idAna).size() == 4, "atividade cancelada nao altera o historico de outubro");
+    assert(c.presenca.query(dia31, c.idAna).size() == 0 && "atividade cancelada nao entra na consulta");
+    bool ok = c.presenca.attendancePercentage(dia31, percentual, c.idAna);
+    assert(!ok && "atividade cancelada nao entra na contagem (percentual false)");
+    assert(c.presenca.query(c.outubro(), c.idAna).size() == 4 && "atividade cancelada nao altera o historico de outubro");
 }
 
 // Sessao inexistente ou removida recebe colecao vazia e false.
 static void testHistSessaoInexistente() {
     CenarioHistorico c;
     double percentual = -1;
-    verify(c.presenca.query(c.outubro(), 999).size() == 0
-        && !c.presenca.attendancePercentage(c.outubro(), percentual, 999),
-        "sessao inexistente: vazio e false");
-    c.presenca.remove(c.idAna);
-    verify(c.presenca.query(c.outubro(), c.idAna).size() == 0
-        && !c.presenca.attendancePercentage(c.outubro(), percentual, c.idAna),
-        "sessao removida: vazio e false");
+    assert(c.presenca.query(c.outubro(), 999).size() == 0 && "sessao inexistente: Colecao vazia");
+    bool okInexistente = c.presenca.attendancePercentage(c.outubro(), percentual, 999);
+    assert(!okInexistente && "sessao inexistente: percentual false");
+    bool removida = c.presenca.remove(c.idAna);
+    assert(removida && "(preparo) remove de sessao existente retorna true");
+    assert(c.presenca.query(c.outubro(), c.idAna).size() == 0 && "sessao removida: Colecao vazia");
+    bool okRemovida = c.presenca.attendancePercentage(c.outubro(), percentual, c.idAna);
+    assert(!okRemovida && "sessao removida: percentual false");
+    assert(c.presenca.query(c.outubro(0, 2), c.idCarlos).size() == 6 && "remover a sessao da Ana nao afeta as demais (Carlos)");
 }
 
 // ---------- Alertar justificativa pendente ----------
@@ -637,19 +713,18 @@ struct CenarioAlertas {
 static void testAlertasCT01GerarEConsultar() {
     CenarioAlertas c;
     Repositorio::instance().justificativas.push_back(Justificativa(20, 7, 12, 2));
-    verify(c.presenca.generatePendingAlerts(c.idSistema),
-        "Alertas CT-01: rotina executada pela sessao do Sistema retorna true");
+    bool rodou = c.presenca.generatePendingAlerts(c.idSistema);
+    assert(rodou && "Alertas CT-01: a rotina executada pela sessao do Sistema retorna true");
     Colecao<Alerta> alertas = c.presenca.query(FiltroAlerta(), c.idCarlos);
-    verify(alertas.size() == 1, "Alertas CT-01: Carlos recebe um alerta");
+    assert(alertas.size() == 1 && "Alertas CT-01: a Colecao do Carlos tem 1 alerta");
     Iterador<Alerta> iterador = alertas.iterator();
-    bool correto = false;
-    if (iterador.hasNext()) {
-        Alerta alerta = iterador.next();
-        correto = alerta.recipientId() == 2 && alerta.justificationId() == 20 && !iterador.hasNext();
-    }
-    verify(correto, "Alertas CT-01: aviso identifica Carlos e a justificativa pendente");
-    verify(c.presenca.query(FiltroAlerta(), c.idOutroChefe).size() == 0,
-        "Alertas CT-01: Chefe de outra secao nao recebe o aviso de Carlos");
+    assert(iterador.hasNext() && "Alertas CT-01: o iterador tem o alerta");
+    Alerta alerta = iterador.next();   // avanca o iterador FORA do assert
+    assert(alerta.recipientId() == 2 && "Alertas CT-01: o destinatario e o Carlos");
+    assert(alerta.justificationId() == 20 && "Alertas CT-01: o alerta indica a justificativa 20");
+    assert(!iterador.hasNext() && "Alertas CT-01: nao ha segundo alerta");
+    assert(c.presenca.query(FiltroAlerta(), c.idOutroChefe).size() == 0 && "Alertas CT-01: Chefe de outra secao nao recebe o aviso");
+    assert(c.presenca.query(FiltroAlerta(), c.idJovem).size() == 0 && "Alertas CT-01: o Jovem nao recebe alertas de Chefe");
 }
 
 // CT-02: a rotina roda novamente e a justificativa continua pendente.
@@ -657,14 +732,16 @@ static void testAlertasCT02SemDuplicar() {
     CenarioAlertas c;
     Repositorio& repositorio = Repositorio::instance();
     repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
-    bool preparado = c.presenca.generatePendingAlerts(c.idSistema);
+    bool primeira = c.presenca.generatePendingAlerts(c.idSistema);
     Colecao<Alerta> antes = c.presenca.query(FiltroAlerta(), c.idCarlos);
-    bool ok = c.presenca.generatePendingAlerts(c.idSistema);
+    assert(primeira && antes.size() == 1 && "Alertas CT-02 (preparo): a primeira rotina gera 1 alerta");
+    bool segunda = c.presenca.generatePendingAlerts(c.idSistema);
     Colecao<Alerta> depois = c.presenca.query(FiltroAlerta(), c.idCarlos);
-    verify(preparado && ok && antes.size() == 1 && depois.size() == 1 && repositorio.alertas.size() == 1,
-        "Alertas CT-02: repetir verificacao mantem apenas um alerta");
-    verify(depois.size() == 1 && depois.at(0).recipientId() == 2 && depois.at(0).justificationId() == 20,
-        "Alertas CT-02: alerta continua associado a mesma justificativa e ao mesmo Chefe");
+    assert(segunda && "Alertas CT-02: a rotina repetida retorna true");
+    assert(depois.size() == 1 && "Alertas CT-02: continua 1 alerta na Colecao do Carlos");
+    assert(repositorio.alertas.size() == 1 && "Alertas CT-02: o Repositorio nao ganhou alerta duplicado");
+    assert(depois.at(0).recipientId() == 2 && "Alertas CT-02: mesmo destinatario");
+    assert(depois.at(0).justificationId() == 20 && "Alertas CT-02: mesma justificativa");
 }
 
 // CT-02: justificativa ja tratada deixa de aparecer na consulta de pendencias.
@@ -676,51 +753,90 @@ static void testAlertasCT02JustificativaTratada() {
         repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
         bool preparado = c.presenca.generatePendingAlerts(c.idSistema);
         Colecao<Alerta> antes = c.presenca.query(FiltroAlerta(), c.idCarlos);
-        repositorio.justificativas[0].setStatus(estado);
+        assert(preparado && antes.size() == 1 && "Alertas CT-02 (preparo): o alerta existe enquanto a justificativa esta pendente");
+        repositorio.justificativas[0].setStatus(estado);   // o tratamento acontece fora desta API
         bool ok = c.presenca.generatePendingAlerts(c.idSistema);
         Colecao<Alerta> depois = c.presenca.query(FiltroAlerta(), c.idCarlos);
-        verify(preparado && antes.size() == 1 && ok && depois.size() == 0,
-            "Alertas CT-02: justificativa " + estado + " deixa a colecao vazia");
+        assert(ok && "Alertas CT-02: a rotina retorna true");
+        assert(depois.size() == 0 && "Alertas CT-02: justificativa Aceita ou Recusada deixa a Colecao vazia");
     }
 }
 
-int runFunctionalTests() {
-    falhas = 0;
+// Alternativa: sem pendencias (ou ja tratadas), nenhum alerta e gerado.
+static void testAlertasSemPendencias() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    bool semNada = c.presenca.generatePendingAlerts(c.idSistema);
+    assert(semNada && "sem justificativas: a rotina retorna true");
+    assert(repositorio.alertas.empty() && "sem justificativas: nenhum alerta e gerado");
+    repositorio.justificativas.push_back(Justificativa(21, 7, 12, 2, "Aceita"));
+    bool jaTratada = c.presenca.generatePendingAlerts(c.idSistema);
+    assert(jaTratada && "justificativa ja tratada: a rotina retorna true");
+    assert(repositorio.alertas.empty() && "justificativa ja tratada: nenhum alerta e gerado");
+    assert(c.presenca.query(FiltroAlerta(), c.idCarlos).size() == 0 && "sem pendencias: Colecao do Carlos vazia");
+}
+
+// A rotina so roda na sessao do Sistema.
+static void testAlertasSoSessaoDoSistema() {
+    CenarioAlertas c;
+    Repositorio& repositorio = Repositorio::instance();
+    repositorio.justificativas.push_back(Justificativa(20, 7, 12, 2));
+    bool comoChefe = c.presenca.generatePendingAlerts(c.idCarlos);
+    bool comoJovem = c.presenca.generatePendingAlerts(c.idJovem);
+    bool semSessao = c.presenca.generatePendingAlerts(999);
+    assert(!comoChefe && "sessao de Chefe: generatePendingAlerts retorna false");
+    assert(!comoJovem && "sessao de Jovem: generatePendingAlerts retorna false");
+    assert(!semSessao && "sessao inexistente: generatePendingAlerts retorna false");
+    assert(repositorio.alertas.empty() && "fora da sessao do Sistema nenhum alerta e gerado");
+    bool comoSistema = c.presenca.generatePendingAlerts(c.idSistema);
+    assert(comoSistema && "controle: a sessao do Sistema roda a rotina");
+    assert(repositorio.alertas.size() == 1 && "controle: o alerta so existe depois da rotina do Sistema");
+}
+
+static void executar(const char* nome, void (*teste)()) {
+    teste();
+    cout << "[OK] " << nome << '\n';
+}
+
+void runFunctionalTests() {
     cout << "\n=== FUNCIONAIS: Cadastrar usuario ===\n";
-    testCT01CadastroValido();
-    testCT02CadastroDuplicado();
+    executar("CT-01 cadastro valido", testCT01CadastroValido);
+    executar("CT-02 cadastro duplicado", testCT02CadastroDuplicado);
+    executar("campos invalidos", testCadastroCamposInvalidos);
+    executar("sessao que nao e de Dirigente", testCadastroSessaoNaoDirigente);
     cout << "\n=== FUNCIONAIS: Cadastrar atividade/evento ===\n";
-    testAtvCT01CadastroValido();
-    testAtvCT02SemTitulo();
-    testAtvHorarioInvalido();
-    testAtvSessaoNaoChefe();
-    testAtvRegraDoCliente();
+    executar("CT-01 cadastro valido", testAtvCT01CadastroValido);
+    executar("CT-02 sem titulo", testAtvCT02SemTitulo);
+    executar("horario invalido", testAtvHorarioInvalido);
+    executar("sessao que nao e de Chefe", testAtvSessaoNaoChefe);
+    executar("regra do cliente", testAtvRegraDoCliente);
     cout << "\n=== FUNCIONAIS: Consultar atividade/evento ===\n";
-    testConsultaCT01FiltrarEVisualizarDetalhes();
-    testConsultaCT02SemAtividadesNoPeriodo();
-    testConsultaCT02AtividadesDeOutraSecao();
-    cout << "\n=== FUNCIONAIS: Registrar presenca,ausencia ou atraso ===\n";
-    testPresCT01RegistroValido();
-    testPresCT02Duplicado();
-    testPresAtividadeEmAndamento();
-    testPresLoteInvalido();
-    testPresOutraSecao();
-    testPresCancelada();
-    testPresSessaoJovem();
+    executar("CT-01 filtrar e visualizar detalhes", testConsultaCT01FiltrarEVisualizarDetalhes);
+    executar("CT-02a sem atividades no periodo", testConsultaCT02SemAtividadesNoPeriodo);
+    executar("CT-02b atividades de outra secao", testConsultaCT02AtividadesDeOutraSecao);
+    executar("sessao que nao e de Chefe", testConsultaSessaoNaoChefe);
+    cout << "\n=== FUNCIONAIS: Registrar presenca, ausencia ou atraso ===\n";
+    executar("CT-01 registro valido", testPresCT01RegistroValido);
+    executar("CT-02 integrante ja registrado", testPresCT02Duplicado);
+    executar("atividade em andamento", testPresAtividadeEmAndamento);
+    executar("lote invalido (tudo ou nada)", testPresLoteInvalido);
+    executar("Chefe de outra secao", testPresOutraSecao);
+    executar("atividade cancelada", testPresCancelada);
+    executar("sessao de Jovem", testPresSessaoJovem);
     cout << "\n=== FUNCIONAIS: Consultar historico de participacao ===\n";
-    testHistCT01Ana();
-    testHistCT02AnaNaoVeOutro();
-    testHistDirigenteSecao();
-    testHistChefeOutraSecao();
-    testHistAlvoNaoJovem();
-    testHistSemRegistros();
-    testHistCancelada();
-    testHistSessaoInexistente();
+    executar("CT-01 Ana", testHistCT01Ana);
+    executar("CT-02 Ana nao ve outro integrante", testHistCT02AnaNaoVeOutro);
+    executar("Dirigente consulta a secao", testHistDirigenteSecao);
+    executar("Chefe de outra secao", testHistChefeOutraSecao);
+    executar("alvo que nao e Jovem", testHistAlvoNaoJovem);
+    executar("sem registros no periodo", testHistSemRegistros);
+    executar("atividade cancelada", testHistCancelada);
+    executar("sessao inexistente ou removida", testHistSessaoInexistente);
     cout << "\n=== FUNCIONAIS: Alertar justificativa pendente ===\n";
-    testAlertasCT01GerarEConsultar();
-    testAlertasCT02SemDuplicar();
-    testAlertasCT02JustificativaTratada();
+    executar("CT-01 gerar e consultar", testAlertasCT01GerarEConsultar);
+    executar("CT-02 repetir sem duplicar", testAlertasCT02SemDuplicar);
+    executar("CT-02 justificativa tratada", testAlertasCT02JustificativaTratada);
+    executar("sem pendencias", testAlertasSemPendencias);
+    executar("rotina so na sessao do Sistema", testAlertasSoSessaoDoSistema);
     Repositorio::instance().clear();
-    Repositorio::instance().clear();
-    return falhas;
 }
