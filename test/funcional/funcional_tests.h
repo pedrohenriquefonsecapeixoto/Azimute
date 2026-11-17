@@ -1,0 +1,6 @@
+#ifndef AZIMUTE_TEST_FUNCIONAL_FUNCIONAL_TESTS_H
+#define AZIMUTE_TEST_FUNCIONAL_FUNCIONAL_TESTS_H
+
+void runFunctionalTests();
+
+#endif
