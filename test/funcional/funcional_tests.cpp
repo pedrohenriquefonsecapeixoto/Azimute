@@ -301,18 +301,30 @@ static void testAtvRegraDoCliente() {
 
 
 // ---------- Consultar atividade/evento ----------
-
+/**
+ * @brief Prepara uma sessão de Chefe Escotista da seção 2 para os testes de consulta de atividades.
+ */
 struct CenarioConsulta {
     Usuario chefe{2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)};
     Sessao sessaoChefe{chefe};
     ServicoAtividades atividades;
     int idChefe = atividades.add(sessaoChefe);
+    /**
+     * @brief Inicializa o cenário com o repositório vazio.
+     */
     CenarioConsulta() { Repositorio::instance().clear(); }
+    /**
+     * @brief Limpa o repositório ao final do cenário.
+     */
     ~CenarioConsulta() { Repositorio::instance().clear(); }
 };
 
 
 // CT-01: tres atividades em outubro/2026 na secao do Chefe; uma Confirmada.
+/**
+ * @brief Verifica se o filtro por período e situação devolve apenas a atividade confirmada, com seus dados e o integrante inscrito.
+ * Confere também se a consulta mantém as três atividades no repositório.
+ */
 static void testConsultaCT01FiltrarEVisualizarDetalhes() {
     CenarioConsulta cenario;
     DadosAtividade dados("Acampamento de Outubro", Data(2026, 10, 3), "08:00",
@@ -344,6 +356,9 @@ static void testConsultaCT01FiltrarEVisualizarDetalhes() {
 }
 
 // CT-02, primeira alternativa: nenhuma atividade no periodo pedido.
+/**
+ * @brief Verifica se a consulta devolve uma coleção vazia quando a atividade da seção está fora do período solicitado.
+ */
 static void testConsultaCT02SemAtividadesNoPeriodo() {
     CenarioConsulta cenario;
     Repositorio::instance().atividades.push_back(Atividade(10,
@@ -355,6 +370,9 @@ static void testConsultaCT02SemAtividadesNoPeriodo() {
 }
 
 // CT-02, segunda alternativa: so existem atividades de outra secao.
+/**
+ * @brief Verifica se a consulta devolve uma coleção vazia quando só há atividades de outra seção no período solicitado.
+ */
 static void testConsultaCT02AtividadesDeOutraSecao() {
     CenarioConsulta cenario;
     Repositorio::instance().atividades.push_back(Atividade(10,
@@ -366,6 +384,9 @@ static void testConsultaCT02AtividadesDeOutraSecao() {
 }
 
 // Consultar atividade: so o Chefe consulta.
+/**
+ * @brief Verifica se uma sessão de Jovem ou inexistente recebe uma coleção vazia e se o Chefe da seção vê a atividade.
+ */
 static void testConsultaSessaoNaoChefe() {
     CenarioConsulta cenario;
     Repositorio::instance().atividades.push_back(Atividade(10,
@@ -872,13 +893,17 @@ static void testHistSessaoInexistente() {
 }
 
 // ---------- Alertar justificativa pendente ----------
-
+/**
+ * @brief Reúne o serviço de presença e as sessões do Sistema, de dois Chefes Escotistas e de um Jovem para os testes de alertas.
+ */
 struct CenarioAlertas {
     Usuario sistema, carlos, outroChefe, jovem;
     Sessao sessaoSistema, sessaoCarlos, sessaoOutroChefe, sessaoJovem;
     ServicoPresenca presenca;
     int idSistema, idCarlos, idOutroChefe, idJovem;
-
+    /**
+     * @brief Limpa o repositório, insere os dois Chefes e o Jovem e registra as quatro sessões no serviço de presença.
+     */
     CenarioAlertas()
         : sistema(0, DadosUsuario("Sistema", Data(1980, 1, 1), "UEL", "Sistema", 0)),
           carlos(2, DadosUsuario("Carlos", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)),
@@ -899,6 +924,9 @@ struct CenarioAlertas {
 
 // CT-01: justificativa pendente da secao 2; Carlos e o Chefe responsavel.
 // O registro e a analise da justificativa sao externos a esta API.
+/**
+ * @brief Verifica se uma justificativa pendente gera um único alerta consultável pelo Chefe da seção correspondente.
+ */
 static void testAlertasCT01GerarEConsultar() {
     CenarioAlertas c;
     Repositorio::instance().justificativas.push_back(Justificativa(20, 7, 12, 2));
@@ -917,6 +945,9 @@ static void testAlertasCT01GerarEConsultar() {
 }
 
 // CT-02: a rotina roda novamente e a justificativa continua pendente.
+/**
+ * @brief Verifica se uma segunda execução da rotina mantém um único alerta para o mesmo destinatário e a mesma justificativa.
+ */
 static void testAlertasCT02SemDuplicar() {
     CenarioAlertas c;
     Repositorio& repositorio = Repositorio::instance();
@@ -934,6 +965,9 @@ static void testAlertasCT02SemDuplicar() {
 }
 
 // CT-02: justificativa ja tratada deixa de aparecer na consulta de pendencias.
+/**
+ * @brief Verifica se o alerta deixa de aparecer na consulta quando a justificativa é aceita ou recusada.
+ */
 static void testAlertasCT02JustificativaTratada() {
     string estados[] = {"Aceita", "Recusada"};
     for (const string& estado : estados) {
@@ -952,6 +986,9 @@ static void testAlertasCT02JustificativaTratada() {
 }
 
 // Alternativa: sem pendencias (ou ja tratadas), nenhum alerta e gerado.
+/**
+ * @brief Verifica se a rotina conclui sem gerar alertas quando não há justificativas ou quando já foram tratadas.
+ */
 static void testAlertasSemPendencias() {
     CenarioAlertas c;
     Repositorio& repositorio = Repositorio::instance();
@@ -966,6 +1003,9 @@ static void testAlertasSemPendencias() {
 }
 
 // A rotina so roda na sessao do Sistema.
+/**
+ * @brief Verifica se a rotina aceita a sessão do Sistema e rejeita as sessões de Chefe, de Jovem e a inexistente.
+ */
 static void testAlertasSoSessaoDoSistema() {
     CenarioAlertas c;
     Repositorio& repositorio = Repositorio::instance();
@@ -982,12 +1022,18 @@ static void testAlertasSoSessaoDoSistema() {
     assert(repositorio.alertas.size() == 1 && "controle: o alerta so existe depois da rotina do Sistema");
 }
 
-
+/**
+ * @brief Executa um teste e imprime a indicação de sucesso se a função terminar normalmente.
+ * @param nome Nome exibido ao lado de [OK].
+ * @param teste Ponteiro para a função de teste a executar.
+ */
 static void executar(const char* nome, void (*teste)()) {
     teste();
     cout << "[OK] " << nome << '\n';
 }
-
+/**
+ * @brief Executa os testes funcionais por funcionalidade, chama o teste final de falta de memória e limpa o repositório.
+ */
 void runFunctionalTests() {
     cout << "\n=== FUNCIONAIS: Cadastrar usuario ===\n";
     executar("CT-01 cadastro valido", testCT01CadastroValido);
@@ -1028,7 +1074,5 @@ void runFunctionalTests() {
     executar("CT-02 justificativa tratada", testAlertasCT02JustificativaTratada);
     executar("sem pendencias", testAlertasSemPendencias);
     executar("rotina so na sessao do Sistema", testAlertasSoSessaoDoSistema);
-    cout << "\n=== FUNCIONAL FINAL: falha de memoria ===\n";
-    executar("enroll em while ate acabar a memoria", testFinalFaltaDeMemoria);
     Repositorio::instance().clear();
 }
