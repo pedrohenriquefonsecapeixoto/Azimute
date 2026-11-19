@@ -6,6 +6,7 @@
 #include "../../src/moduloConcre/Repositorio.h"
 #include "../../src/moduloConcre/ServicoPresenca.h"
 #include <string>
+#include <new>
 #include <ctime>
 #include <vector>
 #include "../../include/Colecao.h"
@@ -13,12 +14,25 @@
 #include <cassert>
 using namespace std;
 
+
+/**
+ * @brief Compara dois usuarios campo a campo (id, nome, nascimento, vinculo, papel e secao).
+ * @param a Primeiro usuario a comparar.
+ * @param b Segundo usuario a comparar.
+ * @return true se todos os campos comparados forem iguais; false caso contrario.
+ */
 static bool igual(const Usuario& a, const Usuario& b) {
     return a.id() == b.id() && a.details().name() == b.details().name()
         && a.details().birth() == b.details().birth() && a.details().bond() == b.details().bond()
         && a.role() == b.role() && a.sectionId() == b.sectionId();
 }
 
+/**
+ * @brief CT-01 de Cadastrar usuario: cadastro valido feito pelo Dirigente.
+ * Verifica que registrar retorna true, gera id novo, grava exatamente um usuario e que o usuario de saida e identico ao gravado no Repositorio.
+ * @param Nenhum.
+ * @return Nada (void).
+ */
 // Cadastrar usuario, CT-01: dirigente em sessao, Ana sem cadastro anterior.
 static void testCT01CadastroValido() {
     Repositorio& repositorio = Repositorio::instance();
@@ -43,6 +57,12 @@ static void testCT01CadastroValido() {
     assert(salvo->details().bond() == "UEL" && "CT-01: vinculo gravado");
 }
 
+/**
+ * @brief CT-02 de Cadastrar usuario: recusa cadastro duplicado (mesmo nome e mesma data de nascimento).
+ * Verifica que registrar retorna false, nenhum usuario novo e criado, o cadastro existente nao muda e o usuario de saida permanece inalterado.
+ * @param Nenhum.
+ * @return Nada (void).
+ */
 // Cadastrar usuario, CT-02: mesmo nome e mesma data de nascimento.
 static void testCT02CadastroDuplicado() {
     Repositorio& repositorio = Repositorio::instance();
@@ -64,6 +84,12 @@ static void testCT02CadastroDuplicado() {
     assert(igual(nova, original) && "CT-02: o usuario de saida nao muda");
 }
 
+/**
+ * @brief Fluxo alternativo de Cadastrar usuario: campos invalidos impedem a criacao.
+ * Testa nome vazio, nascimento inexistente (30/02), vinculo vazio e papel nao permitido; em todos registrar retorna false e o Repositorio continua vazio.
+ * @param Nenhum.
+ * @return Nada (void).
+ */
 // Cadastrar usuario, alternativa: campos invalidos impedem a criacao.
 static void testCadastroCamposInvalidos() {
     Repositorio& repositorio = Repositorio::instance();
@@ -86,6 +112,12 @@ static void testCadastroCamposInvalidos() {
     }
 }
 
+/**
+ * @brief Passo 3 de Cadastrar usuario: somente a sessao de Dirigente pode cadastrar.
+ * Verifica que sessao de Chefe e sessao inexistente recebem false e que nenhum usuario e criado.
+ * @param Nenhum.
+ * @return Nada (void).
+ */
 // Cadastrar usuario, passo 3: so o Dirigente cadastra.
 static void testCadastroSessaoNaoDirigente() {
     Repositorio& repositorio = Repositorio::instance();
@@ -104,6 +136,13 @@ static void testCadastroSessaoNaoDirigente() {
 
 // ---------- Cadastrar atividade/evento ----------
 
+/**
+ * @brief Compara duas atividades campo a campo (usada nos testes de cadastro de atividade).
+ *
+ * @param a Primeira atividade.
+ * @param b Segunda atividade.
+ * @return true se id, dados (título, data, horário, local, tipo e ramo), seção, situação e integrantes forem iguais; false caso contrário.
+ */
 static bool igualAtv(const Atividade& a, const Atividade& b) {
     return a.id() == b.id() && a.details().title() == b.details().title()
         && a.details().date() == b.details().date() && a.details().startTime() == b.details().startTime()
@@ -112,7 +151,14 @@ static bool igualAtv(const Atividade& a, const Atividade& b) {
         && a.status() == b.status() && a.members() == b.members();
 }
 
-// Chefe da secao 2; Jovens 10 e 11 na secao 2, Jovem 12 na secao 3.
+/**
+ * @brief Prepara o Repositório para os testes de cadastro de atividade.
+ *
+ * Limpa o Repositório e grava o Chefe recebido (seção 2), os Jovens 10 e 11 (seção 2)
+ * e o Jovem 12 (seção 3).
+ *
+ * @param chefe Chefe Escotista da seção 2 que será gravado no Repositório.
+ */
 static void prepararSecoes(const Usuario& chefe) {
     Repositorio& repositorio = Repositorio::instance();
     repositorio.clear();
@@ -122,7 +168,12 @@ static void prepararSecoes(const Usuario& chefe) {
     repositorio.usuarios.push_back(Usuario(12, DadosUsuario("Jovem C", Data(2012, 3, 3), "UEL", "Jovem", 3)));
 }
 
-// Cadastrar atividade, CT-01: Chefe da secao 2 com dados completos.
+/**
+ * @brief Teste CT-01 do cadastro de atividade: Chefe da seção 2 com dados completos.
+ *
+ * Verifica que registrar retorna true, que a atividade recebe id próprio e situação "Confirmada",
+ * que fica gravada no Repositório e que só os Jovens da seção do Chefe (10 e 11) são inscritos.
+ */
 static void testAtvCT01CadastroValido() {
     Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
     prepararSecoes(chefe);
@@ -147,7 +198,11 @@ static void testAtvCT01CadastroValido() {
     assert(nova.members()[0] == 10 && nova.members()[1] == 11 && "CT-01: inscritos 10 e 11 (o Jovem 12 e de outra secao)");
 }
 
-// Cadastrar atividade, CT-02: campo obrigatorio vazio (sem titulo).
+/**
+ * @brief Teste CT-02 do cadastro de atividade: campo obrigatório vazio (sem título).
+ *
+ * Verifica que registrar retorna false, que nenhuma atividade é criada e que a atividade de saída não muda.
+ */
 static void testAtvCT02SemTitulo() {
     Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
     prepararSecoes(chefe);
@@ -163,7 +218,11 @@ static void testAtvCT02SemTitulo() {
     assert(igualAtv(nova, original) && "CT-02: a atividade de saida nao muda");
 }
 
-// Cadastrar atividade: horario invalido.
+/**
+ * @brief Teste do cadastro de atividade com horário inválido ("25:00" e "8:00", fora do formato HH:MM).
+ *
+ * Verifica que registrar retorna false e que nenhuma atividade é criada.
+ */
 static void testAtvHorarioInvalido() {
     Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
     prepararSecoes(chefe);
@@ -180,7 +239,11 @@ static void testAtvHorarioInvalido() {
     }
 }
 
-// Cadastrar atividade: sessao que nao e de Chefe.
+/**
+ * @brief Teste do cadastro de atividade com sessão que não é de Chefe (sessão de Jovem).
+ *
+ * Verifica que registrar retorna false e que nenhuma atividade é criada.
+ */
 static void testAtvSessaoNaoChefe() {
     Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
     prepararSecoes(chefe);
@@ -195,14 +258,28 @@ static void testAtvSessaoNaoChefe() {
     assert(Repositorio::instance().atividades.empty() && "sessao de Jovem: nenhuma atividade e criada");
 }
 
+/**
+ * @brief Regra do cliente usada no teste: recusa atividades do tipo "Acampamento".
+ * Atributos: nenhum.
+ */
 class RegraSemAcampamento : public Regra<DadosAtividade> {
 public:
+    /**
+     * @brief Decide se os dados de uma atividade são aceitos pela regra.
+     *
+     * @param dados Dados da atividade que se deseja cadastrar.
+     * @return false se o tipo for "Acampamento"; true para qualquer outro tipo.
+     */
     bool allows(const DadosAtividade& dados) const override { 
         return dados.type() != "Acampamento"; 
     }
 };
 
-// Cadastrar atividade: Regra do cliente que recusa o tipo.
+/**
+ * @brief Teste do cadastro de atividade com uma Regra do cliente que recusa o tipo "Acampamento".
+ *
+ * Verifica que registrar retorna false para o tipo recusado (nada é criado) e true para um tipo aceito.
+ */
 static void testAtvRegraDoCliente() {
     Usuario chefe(2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2));
     prepararSecoes(chefe);
@@ -224,18 +301,30 @@ static void testAtvRegraDoCliente() {
 
 
 // ---------- Consultar atividade/evento ----------
-
+/**
+ * @brief Prepara uma sessão de Chefe Escotista da seção 2 para os testes de consulta de atividades.
+ */
 struct CenarioConsulta {
     Usuario chefe{2, DadosUsuario("Chefe", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)};
     Sessao sessaoChefe{chefe};
     ServicoAtividades atividades;
     int idChefe = atividades.add(sessaoChefe);
+    /**
+     * @brief Inicializa o cenário com o repositório vazio.
+     */
     CenarioConsulta() { Repositorio::instance().clear(); }
+    /**
+     * @brief Limpa o repositório ao final do cenário.
+     */
     ~CenarioConsulta() { Repositorio::instance().clear(); }
 };
 
 
 // CT-01: tres atividades em outubro/2026 na secao do Chefe; uma Confirmada.
+/**
+ * @brief Verifica se o filtro por período e situação devolve apenas a atividade confirmada, com seus dados e o integrante inscrito.
+ * Confere também se a consulta mantém as três atividades no repositório.
+ */
 static void testConsultaCT01FiltrarEVisualizarDetalhes() {
     CenarioConsulta cenario;
     DadosAtividade dados("Acampamento de Outubro", Data(2026, 10, 3), "08:00",
@@ -267,6 +356,9 @@ static void testConsultaCT01FiltrarEVisualizarDetalhes() {
 }
 
 // CT-02, primeira alternativa: nenhuma atividade no periodo pedido.
+/**
+ * @brief Verifica se a consulta devolve uma coleção vazia quando a atividade da seção está fora do período solicitado.
+ */
 static void testConsultaCT02SemAtividadesNoPeriodo() {
     CenarioConsulta cenario;
     Repositorio::instance().atividades.push_back(Atividade(10,
@@ -278,6 +370,9 @@ static void testConsultaCT02SemAtividadesNoPeriodo() {
 }
 
 // CT-02, segunda alternativa: so existem atividades de outra secao.
+/**
+ * @brief Verifica se a consulta devolve uma coleção vazia quando só há atividades de outra seção no período solicitado.
+ */
 static void testConsultaCT02AtividadesDeOutraSecao() {
     CenarioConsulta cenario;
     Repositorio::instance().atividades.push_back(Atividade(10,
@@ -289,6 +384,9 @@ static void testConsultaCT02AtividadesDeOutraSecao() {
 }
 
 // Consultar atividade: so o Chefe consulta.
+/**
+ * @brief Verifica se uma sessão de Jovem ou inexistente recebe uma coleção vazia e se o Chefe da seção vê a atividade.
+ */
 static void testConsultaSessaoNaoChefe() {
     CenarioConsulta cenario;
     Repositorio::instance().atividades.push_back(Atividade(10,
@@ -304,7 +402,12 @@ static void testConsultaSessaoNaoChefe() {
 
 // ---------- Registrar presenca, ausencia ou atraso ----------
 
-// CT-01: atividade 12 encerrada, nao cancelada, da secao do Chefe, integrantes 7 e 8.
+/**
+ * @brief CT-01 de Registrar presenca, ausencia ou atraso: registro valido do Chefe da secao.
+ * Atividade 12 encerrada e nao cancelada, com integrantes 7 e 8. Verifica listMembers, record e recordingTime.
+ * @param Nenhum.
+ * @return Nada (void);
+ */
 static void testPresCT01RegistroValido() {
     Repositorio& r = Repositorio::instance();
     r.clear();
@@ -338,7 +441,12 @@ static void testPresCT01RegistroValido() {
     assert(minutos >= 0 && "CT-01: minutos desde o fim da atividade (nunca negativo)");
 }
 
-// CT-02: integrante 8 ja tem situacao registrada na atividade 12.
+/**
+ * @brief CT-02 de Registrar presenca, ausencia ou atraso: recusa novo registro para integrante que ja tem situacao.
+ * Apos o primeiro registro, record do integrante 8 retorna false, nada novo e gravado e a situacao anterior permanece.
+ * @param Nenhum.
+ * @return Nada (void).
+ */
 static void testPresCT02Duplicado() {
     Repositorio& r = Repositorio::instance();
     r.clear();
@@ -369,7 +477,12 @@ static void testPresCT02Duplicado() {
     assert(mantida && "CT-02: a situacao anterior do integrante 8 (Atraso) permanece");
 }
 
-// Atividade que ainda nao terminou.
+/**
+ * @brief Fluxo alternativo: atividade que ainda nao terminou.
+ * Verifica que record e recordingTime retornam false, nada e gravado e o valor de minutos nao e alterado.
+ * @param Nenhum.
+ * @return Nada (void).
+ */
 static void testPresAtividadeEmAndamento() {
     Repositorio& r = Repositorio::instance();
     r.clear();
@@ -396,7 +509,12 @@ static void testPresAtividadeEmAndamento() {
     assert(minutos == -1 && "atividade em andamento: minutos nao e alterado");
 }
 
-// Lote invalido (tudo ou nada).
+/**
+ * @brief Fluxo alternativo: lote invalido e rejeitado por inteiro.
+ * Testa lote com situacao invalida e lote com integrante nao inscrito.
+ * @param Nenhum.
+ * @return Nada (void).
+ */
 static void testPresLoteInvalido() {
     Repositorio& r = Repositorio::instance();
     r.clear();
@@ -426,7 +544,12 @@ static void testPresLoteInvalido() {
     assert(r.participacoes.empty() && "lote com integrante nao inscrito: nenhum item e gravado");
 }
 
-// Chefe de outra secao.
+/**
+ * @brief Fluxo alternativo: Chefe de outra secao nao registra nem consulta a atividade.
+ * Verifica que listMembers vem vazio, record e recordingTime retornam false e nada e gravado; como controle, o Chefe da secao consegue registrar a mesma lista.
+ * @param Nenhum.
+ * @return Nada (void).
+ */
 static void testPresOutraSecao() {
     Repositorio& r = Repositorio::instance();
     r.clear();
@@ -459,7 +582,12 @@ static void testPresOutraSecao() {
     assert(minutos == -1 && "outra secao: minutos nao e alterado");
 }
 
-// Atividade cancelada.
+/**
+ * @brief Fluxo alternativo: atividade cancelada nao aceita registro de presenca.
+ * Verifica que record retorna false e nenhuma participacao e gravada.
+ * @param Nenhum.
+ * @return Nada (void).
+ */
 static void testPresCancelada() {
     Repositorio& r = Repositorio::instance();
     r.clear();
@@ -482,7 +610,12 @@ static void testPresCancelada() {
     assert(r.participacoes.empty() && "atividade cancelada: nada e gravado");
 }
 
-// Sessao de Jovem.
+/**
+ * @brief Fluxo alternativo: sessao de Jovem nao registra presenca.
+ * Verifica que listMembers vem vazio, record retorna false e nada e gravado.
+ * @param Nenhum.
+ * @return Nada (void).
+ */
 static void testPresSessaoJovem() {
     Repositorio& r = Repositorio::instance();
     r.clear();
@@ -502,16 +635,29 @@ static void testPresSessaoJovem() {
 
 // ---------- Consultar historico de participacao ----------
 
+/**
+ * @brief Compara dois números reais, aceitando uma diferença muito pequena (menor que 0,0001).
+ *
+ * @param a Primeiro número.
+ * @param b Segundo número.
+ * @return true se a diferença entre os dois for menor que 0,0001; false caso contrário.
+ */
 static bool pertoDe(double a, double b) {
     double d = a - b;
     return (d < 0 ? -d : d) < 0.0001;
 }
 
-// Cenario de outubro/2026: Dirigente 1, Chefes 2 (secao 2) e 4 (secao 3),
-// Jovens Ana 7 e Beto 8 (secao 2), Caio 9 (secao 3).
-// Atividades 1 a 4 de outubro (secao 2), 5 em setembro, 6 cancelada, 7 da secao 3.
-// Ana: Presente, Atraso, Ausente, Presente em outubro (3 de 4); mais um registro
-// fora do periodo (5) e outro em atividade cancelada (6).
+/**
+ * @brief Cenário de outubro/2026 usado nos testes do histórico de participação.
+ * Atributos: dirigente, carlos, dora, ana, beto e caio (usuários); sessaoDirigente, sessaoCarlos, sessaoDora,
+ * sessaoAna e sessaoBeto (sessões deles); presenca (o ServicoPresenca testado); idDirigente, idCarlos, idDora,
+ * idAna e idBeto (identificadores das sessões no serviço).
+ *
+ * Usuários: Dirigente 1, Chefes 2 (seção 2) e 4 (seção 3), Jovens Ana 7 e Beto 8 (seção 2) e Caio 9 (seção 3).
+ * Atividades: 1 a 4 em outubro (seção 2), 5 em setembro, 6 cancelada e 7 da seção 3.
+ * Ana tem Presente, Atraso, Ausente e Presente em outubro (3 comparecimentos em 4), mais um registro
+ * fora do período (atividade 5) e outro em atividade cancelada (atividade 6).
+ */
 struct CenarioHistorico {
     Usuario dirigente{1, DadosUsuario("Dirigente", Data(1980, 1, 1), "UEL", "Dirigente da UEL", 0)};
     Usuario carlos{2, DadosUsuario("Carlos", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)};
@@ -527,17 +673,36 @@ struct CenarioHistorico {
     ServicoPresenca presenca;
     int idDirigente, idCarlos, idDora, idAna, idBeto;
 
+    /**
+     * @brief Grava uma atividade realizada (ou com a situação informada) no Repositório, em 2026.
+     *
+     * @param idAtividade Identificador da atividade.
+     * @param dia Dia da atividade.
+     * @param mes Mês da atividade.
+     * @param idSecao Identificador da seção da atividade.
+     * @param situacao Situação da atividade (Confirmada, Realizada ou Cancelada).
+     */
     static void guardar(int idAtividade, int dia, int mes, int idSecao, const string& situacao) {
         Atividade atividade(idAtividade, DadosAtividade("Reuniao", Data(2026, mes, dia), "08:00", "Sede", "Reuniao", "Escoteiro"),
                             idSecao, situacao);
         Repositorio::instance().atividades.push_back(atividade);
     }
+    /**
+     * @brief Grava no Repositório a participação de um jovem em uma atividade.
+     *
+     * @param idAtividade Identificador da atividade.
+     * @param idJovem Identificador do jovem.
+     * @param situacao Situação da participação (Presente, Ausente ou Atraso).
+     */
     static void registrar(int idAtividade, int idJovem, const string& situacao) {
         Participacao participacao(idJovem, situacao);
         participacao.attach(idAtividade, time(nullptr));
         Repositorio::instance().participacoes.push_back(participacao);
     }
 
+    /**
+     * @brief Monta o cenário: limpa o Repositório, grava usuários, atividades e participações e registra as sessões no serviço.
+     */
     CenarioHistorico() {
         Repositorio& r = Repositorio::instance();
         r.clear();
@@ -569,12 +734,24 @@ struct CenarioHistorico {
         idAna = presenca.add(sessaoAna);
         idBeto = presenca.add(sessaoBeto);
     }
+    /**
+     * @brief Cria um filtro de histórico para o período de 1 a 31 de outubro de 2026.
+     *
+     * @param idIntegrante Identificador do jovem consultado; 0 significa o próprio usuário da sessão (ou a seção, se idSecao for diferente de 0).
+     * @param idSecao Identificador da seção consultada; 0 significa nenhuma seção.
+     * @return Filtro do histórico para outubro de 2026.
+     */
     FiltroHistorico outubro(int idIntegrante = 0, int idSecao = 0) const {
         return FiltroHistorico(Data(2026, 10, 1), Data(2026, 10, 31), idIntegrante, idSecao);
     }
 };
 
-// CT-01: Ana (id 7), 3 comparecimentos em 4 atividades de outubro/2026.
+/**
+ * @brief Teste CT-01 do histórico: Ana (id 7), com 3 comparecimentos em 4 atividades de outubro/2026.
+ *
+ * Verifica que query traz só os 4 registros da Ana e que attendancePercentage retorna true com 75,0.
+ * Informar o próprio id da Ana no filtro traz o mesmo histórico.
+ */
 static void testHistCT01Ana() {
     CenarioHistorico c;
     Colecao<Participacao> historico = c.presenca.query(c.outubro(), c.idAna);
@@ -591,7 +768,12 @@ static void testHistCT01Ana() {
     assert(explicito.size() == 4 && "CT-01: informar o proprio id da Ana traz o mesmo historico");
 }
 
-// CT-02: Ana com idIntegrante = 8 recebe vazio e false, sem revelar dado de outro integrante.
+/**
+ * @brief Teste CT-02 do histórico: Ana consultando o idIntegrante 8 (outro jovem).
+ *
+ * Verifica que query devolve Colecao vazia e attendancePercentage retorna false,
+ * sem alterar o percentual, ou seja, sem revelar dado de outro integrante.
+ */
 static void testHistCT02AnaNaoVeOutro() {
     CenarioHistorico c;
     double percentual = -1;
@@ -601,7 +783,12 @@ static void testHistCT02AnaNaoVeOutro() {
     assert(pertoDe(percentual, -1) && "CT-02: percentual nao e alterado (nada de outro integrante e revelado)");
 }
 
-// Dirigente consulta a secao 2 inteira e recebe os registros e o percentual.
+/**
+ * @brief Teste do histórico: Dirigente consulta a seção 2 inteira.
+ *
+ * Verifica que recebe os 6 registros de outubro (Ana e Beto) e o percentual da seção (4 de 6),
+ * e que também consegue consultar um Jovem de qualquer seção.
+ */
 static void testHistDirigenteSecao() {
     CenarioHistorico c;
     Colecao<Participacao> historico = c.presenca.query(c.outubro(0, 2), c.idDirigente);
@@ -613,7 +800,12 @@ static void testHistDirigenteSecao() {
     assert(c.presenca.query(c.outubro(9), c.idDirigente).size() == 1 && "Dirigente: consulta Jovem de qualquer secao");
 }
 
-// Chefe consultando Jovem ou secao de outra secao recebe vazio e false.
+/**
+ * @brief Teste do histórico: Chefe consultando Jovem ou seção de outra seção.
+ *
+ * Verifica que recebe Colecao vazia e false, sem alterar o percentual,
+ * e que na própria seção a consulta funciona normalmente (6 registros e 75,0 para a Ana).
+ */
 static void testHistChefeOutraSecao() {
     CenarioHistorico c;
     double percentual = -1;
@@ -630,7 +822,11 @@ static void testHistChefeOutraSecao() {
     assert(pertoDe(percentual, 75.0) && "Chefe da propria secao: percentual da Ana 75,0");
 }
 
-// Alvo que nao e Jovem (Chefe ou Dirigente) e recusado.
+/**
+ * @brief Teste do histórico: alvo que não é Jovem (Chefe ou Dirigente) é recusado.
+ *
+ * Verifica que Dirigente e Chefe recebem Colecao vazia e false ao consultar um Chefe ou um Dirigente.
+ */
 static void testHistAlvoNaoJovem() {
     CenarioHistorico c;
     double percentual = -1;
@@ -645,7 +841,11 @@ static void testHistAlvoNaoJovem() {
     assert(!okChefeChefe && "alvo Chefe: Chefe recebe false");
 }
 
-// Sem registros no periodo: query vazia e percentual false.
+/**
+ * @brief Teste do histórico: período sem registros (novembro/2026).
+ *
+ * Verifica que query devolve Colecao vazia e attendancePercentage retorna false, sem alterar o percentual.
+ */
 static void testHistSemRegistros() {
     CenarioHistorico c;
     double percentual = -1;
@@ -656,7 +856,12 @@ static void testHistSemRegistros() {
     assert(pertoDe(percentual, -1) && "sem registros no periodo: percentual nao e alterado");
 }
 
-// Atividade cancelada nao entra na contagem.
+/**
+ * @brief Teste do histórico: atividade cancelada não entra na contagem.
+ *
+ * Verifica que, no dia da atividade cancelada (31/10/2026), query vem vazia e attendancePercentage retorna false,
+ * e que o histórico de outubro da Ana continua com 4 registros.
+ */
 static void testHistCancelada() {
     CenarioHistorico c;
     double percentual = -1;
@@ -667,7 +872,12 @@ static void testHistCancelada() {
     assert(c.presenca.query(c.outubro(), c.idAna).size() == 4 && "atividade cancelada nao altera o historico de outubro");
 }
 
-// Sessao inexistente ou removida recebe colecao vazia e false.
+/**
+ * @brief Teste do histórico: sessão inexistente ou removida.
+ *
+ * Verifica que query devolve Colecao vazia e attendancePercentage retorna false,
+ * e que remover a sessão da Ana não afeta as demais sessões (Carlos continua consultando).
+ */
 static void testHistSessaoInexistente() {
     CenarioHistorico c;
     double percentual = -1;
@@ -683,13 +893,17 @@ static void testHistSessaoInexistente() {
 }
 
 // ---------- Alertar justificativa pendente ----------
-
+/**
+ * @brief Reúne o serviço de presença e as sessões do Sistema, de dois Chefes Escotistas e de um Jovem para os testes de alertas.
+ */
 struct CenarioAlertas {
     Usuario sistema, carlos, outroChefe, jovem;
     Sessao sessaoSistema, sessaoCarlos, sessaoOutroChefe, sessaoJovem;
     ServicoPresenca presenca;
     int idSistema, idCarlos, idOutroChefe, idJovem;
-
+    /**
+     * @brief Limpa o repositório, insere os dois Chefes e o Jovem e registra as quatro sessões no serviço de presença.
+     */
     CenarioAlertas()
         : sistema(0, DadosUsuario("Sistema", Data(1980, 1, 1), "UEL", "Sistema", 0)),
           carlos(2, DadosUsuario("Carlos", Data(1980, 1, 1), "UEL", "Chefe Escotista", 2)),
@@ -710,6 +924,9 @@ struct CenarioAlertas {
 
 // CT-01: justificativa pendente da secao 2; Carlos e o Chefe responsavel.
 // O registro e a analise da justificativa sao externos a esta API.
+/**
+ * @brief Verifica se uma justificativa pendente gera um único alerta consultável pelo Chefe da seção correspondente.
+ */
 static void testAlertasCT01GerarEConsultar() {
     CenarioAlertas c;
     Repositorio::instance().justificativas.push_back(Justificativa(20, 7, 12, 2));
@@ -728,6 +945,9 @@ static void testAlertasCT01GerarEConsultar() {
 }
 
 // CT-02: a rotina roda novamente e a justificativa continua pendente.
+/**
+ * @brief Verifica se uma segunda execução da rotina mantém um único alerta para o mesmo destinatário e a mesma justificativa.
+ */
 static void testAlertasCT02SemDuplicar() {
     CenarioAlertas c;
     Repositorio& repositorio = Repositorio::instance();
@@ -745,6 +965,9 @@ static void testAlertasCT02SemDuplicar() {
 }
 
 // CT-02: justificativa ja tratada deixa de aparecer na consulta de pendencias.
+/**
+ * @brief Verifica se o alerta deixa de aparecer na consulta quando a justificativa é aceita ou recusada.
+ */
 static void testAlertasCT02JustificativaTratada() {
     string estados[] = {"Aceita", "Recusada"};
     for (const string& estado : estados) {
@@ -763,6 +986,9 @@ static void testAlertasCT02JustificativaTratada() {
 }
 
 // Alternativa: sem pendencias (ou ja tratadas), nenhum alerta e gerado.
+/**
+ * @brief Verifica se a rotina conclui sem gerar alertas quando não há justificativas ou quando já foram tratadas.
+ */
 static void testAlertasSemPendencias() {
     CenarioAlertas c;
     Repositorio& repositorio = Repositorio::instance();
@@ -777,6 +1003,9 @@ static void testAlertasSemPendencias() {
 }
 
 // A rotina so roda na sessao do Sistema.
+/**
+ * @brief Verifica se a rotina aceita a sessão do Sistema e rejeita as sessões de Chefe, de Jovem e a inexistente.
+ */
 static void testAlertasSoSessaoDoSistema() {
     CenarioAlertas c;
     Repositorio& repositorio = Repositorio::instance();
@@ -793,11 +1022,18 @@ static void testAlertasSoSessaoDoSistema() {
     assert(repositorio.alertas.size() == 1 && "controle: o alerta so existe depois da rotina do Sistema");
 }
 
+/**
+ * @brief Executa um teste e imprime a indicação de sucesso se a função terminar normalmente.
+ * @param nome Nome exibido ao lado de [OK].
+ * @param teste Ponteiro para a função de teste a executar.
+ */
 static void executar(const char* nome, void (*teste)()) {
     teste();
     cout << "[OK] " << nome << '\n';
 }
-
+/**
+ * @brief Executa os testes funcionais por funcionalidade, chama o teste final de falta de memória e limpa o repositório.
+ */
 void runFunctionalTests() {
     cout << "\n=== FUNCIONAIS: Cadastrar usuario ===\n";
     executar("CT-01 cadastro valido", testCT01CadastroValido);
