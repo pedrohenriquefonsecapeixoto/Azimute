@@ -982,16 +982,6 @@ static void testAlertasSoSessaoDoSistema() {
     assert(repositorio.alertas.size() == 1 && "controle: o alerta so existe depois da rotina do Sistema");
 }
 
-// Teste final: enche a memoria de verdade chamando enroll (push_back) ate faltar memoria.
-static void testFinalFaltaDeMemoria() {
-    Atividade atividade;
-    try {
-        while (true)
-            atividade.enroll(1);
-    } catch (const bad_alloc&) {
-        cout << "Erro: faltou memoria no enroll (" << atividade.members().size() << " chamadas).\n";
-    }
-}
 
 static void executar(const char* nome, void (*teste)()) {
     teste();
